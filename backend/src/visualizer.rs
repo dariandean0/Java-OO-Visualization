@@ -1,6 +1,8 @@
 use crate::analyzer::{AnalysisResult, JavaAnalyzer};
 use crate::graph_generator::{GraphConfig, GraphGenerator};
 use crate::parser::JavaParser;
+use crate::execution_analyzer::{ExecutionAnalyzer, ExecutionFlow};
+use crate::execution_graph_generator::{ExecutionGraphGenerator, ExecutionGraphConfig, ExecutionGraphStep};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
@@ -10,6 +12,13 @@ pub struct VisualizationResult {
     pub dot_code: String,
     pub analysis: AnalysisResult,
     pub step_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutionVisualizationResult {
+    pub execution_flow: ExecutionFlow,
+    pub static_analysis: AnalysisResult,
+    pub execution_graphs: Vec<ExecutionGraphStep>,
 }
 
 pub struct JavaVisualizer {
@@ -93,6 +102,64 @@ impl JavaVisualizer {
             .parse(java_code)
             .context("Parse Error")
             .map(|_| true)
+    }
+
+    /// Analyze execution flow starting from main method
+    pub fn analyze_execution_flow(&mut self, java_code: &str) -> Result<ExecutionVisualizationResult> {
+        // First do static analysis
+        let tree = self.parser.parse(java_code).context("Failed to parse Java code")?;
+        let root_node = self.parser.get_root_node(&tree);
+        let static_analysis = self.analyzer.analyze(&root_node, java_code);
+
+        // Then do execution flow analysis
+        let mut execution_analyzer = ExecutionAnalyzer::new(static_analysis.clone());
+        let execution_flow = execution_analyzer.analyze_execution_flow(&root_node, java_code);
+
+        // Generate step-by-step execution graphs
+        let graph_generator = ExecutionGraphGenerator::new();
+        let execution_graphs = graph_generator.generate_execution_graphs(&execution_flow);
+
+        Ok(ExecutionVisualizationResult {
+            execution_flow,
+            static_analysis,
+            execution_graphs,
+        })
+    }
+
+    /// Analyze execution flow with custom configuration
+    pub fn analyze_execution_flow_with_config(
+        &mut self,
+        java_code: &str,
+        execution_config: ExecutionGraphConfig,
+    ) -> Result<ExecutionVisualizationResult> {
+        // First do static analysis
+        let tree = self.parser.parse(java_code).context("Failed to parse Java code")?;
+        let root_node = self.parser.get_root_node(&tree);
+        let static_analysis = self.analyzer.analyze(&root_node, java_code);
+
+        // Then do execution flow analysis
+        let mut execution_analyzer = ExecutionAnalyzer::new(static_analysis.clone());
+        let execution_flow = execution_analyzer.analyze_execution_flow(&root_node, java_code);
+
+        // Generate step-by-step execution graphs with custom config
+        let graph_generator = ExecutionGraphGenerator::with_config(execution_config);
+        let execution_graphs = graph_generator.generate_execution_graphs(&execution_flow);
+
+        Ok(ExecutionVisualizationResult {
+            execution_flow,
+            static_analysis,
+            execution_graphs,
+        })
+    }
+
+    /// Generate only execution flow without graphs (for performance)
+    pub fn get_execution_flow_only(&mut self, java_code: &str) -> Result<ExecutionFlow> {
+        let tree = self.parser.parse(java_code).context("Failed to parse Java code")?;
+        let root_node = self.parser.get_root_node(&tree);
+        let static_analysis = self.analyzer.analyze(&root_node, java_code);
+
+        let mut execution_analyzer = ExecutionAnalyzer::new(static_analysis);
+        Ok(execution_analyzer.analyze_execution_flow(&root_node, java_code))
     }
 }
 
