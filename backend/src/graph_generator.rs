@@ -345,30 +345,4 @@ mod tests {
         assert!(dot.contains("name: String"));
         assert!(dot.contains("getName(): String"));
     }
-
-    #[test]
-    fn test_step_by_step_generation() {
-        let class = JavaClass {
-            name: "TestClass".to_string(),
-            visibility: "public".to_string(),
-            is_abstract: false,
-            is_interface: false,
-            extends: None,
-            implements: Vec::new(),
-            fields: Vec::new(),
-            methods: Vec::new(),
-            constructors: Vec::new(),
-        };
-
-        let analysis = AnalysisResult {
-            classes: vec![class],
-            relationships: Vec::new(),
-        };
-
-        let generator = GraphGenerator::new();
-        let steps = generator.generate_step_by_step(&analysis);
-
-        assert!(!steps.is_empty());
-        assert!(steps[0].contains("digraph JavaClasses"));
-    }
 }

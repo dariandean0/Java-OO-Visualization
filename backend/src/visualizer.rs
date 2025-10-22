@@ -11,19 +11,6 @@ pub struct VisualizationResult {
     pub step_count: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StepByStepResult {
-    pub steps: Vec<StepResult>,
-    pub final_analysis: AnalysisResult,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StepResult {
-    pub step_number: usize,
-    pub description: String,
-    pub dot_code: String,
-}
-
 pub struct JavaVisualizer {
     parser: JavaParser,
     analyzer: JavaAnalyzer,
@@ -44,7 +31,7 @@ impl JavaVisualizer {
     }
 
     pub fn with_config(config: GraphConfig) -> Result<Self> {
-        let parser = JavaParser::new().context("uwu")?;
+        let parser = JavaParser::new().context("Parsing Error")?;
         let analyzer = JavaAnalyzer::new();
         let graph_generator = GraphGenerator::with_config(config);
 

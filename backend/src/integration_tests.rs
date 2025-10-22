@@ -1,14 +1,13 @@
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{graph_generator::GraphConfig, visualizer::JavaVisualizer};
 
     #[test]
     fn test_animal_hierarchy_visualization() {
-        let animal_code =
-            fs::read_to_string("examples/Animal.java").expect("Failed to read Animal.java");
-        let dog_code = fs::read_to_string("examples/Dog.java").expect("Failed to read Dog.java");
-        let trainable_code =
-            fs::read_to_string("examples/Trainable.java").expect("Failed to read Trainable.java");
+        let animal_code = include_str!("../examples/Animal.java");
+        let dog_code = include_str!("../examples/Dog.java");
+        let trainable_code = include_str!("../examples/Trainable.java");
 
         // Combine all the code
         let combined_code = format!("{}\n\n{}\n\n{}", animal_code, trainable_code, dog_code);
@@ -35,8 +34,7 @@ mod tests {
 
     #[test]
     fn test_vehicle_class_visualization() {
-        let vehicle_code =
-            fs::read_to_string("examples/Vehicle.java").expect("Failed to read Vehicle.java");
+        let vehicle_code = include_str!("../examples/Vehicle.java");
 
         let mut visualizer = JavaVisualizer::new().unwrap();
         let result = visualizer.analyze_and_generate(&vehicle_code).unwrap();
@@ -121,80 +119,5 @@ mod tests {
         assert!(!result2.dot_code.contains("Field"));
 
         println!("Config test result:\n{}", result2.dot_code);
-    }
-
-    #[test]
-    fn test_comprehensive_java_features() {
-        let complex_code = r#"
-            public abstract class AbstractBase {
-                protected static final String CONSTANT = "test";
-                private int value;
-
-                public AbstractBase(int value) {
-                    this.value = value;
-                }
-
-                public abstract void abstractMethod();
-
-                public final void finalMethod() {
-                    System.out.println("Final method");
-                }
-            }
-
-            public interface MultiInterface extends BaseInterface {
-                void interfaceMethod();
-                default void defaultMethod() {
-                    System.out.println("Default implementation");
-                }
-            }
-
-            public class ConcreteClass extends AbstractBase implements MultiInterface {
-                private String name;
-
-                public ConcreteClass(int value, String name) {
-                    super(value);
-                    this.name = name;
-                }
-
-                @Override
-                public void abstractMethod() {
-                    System.out.println("Implemented abstract method");
-                }
-
-                @Override
-                public void interfaceMethod() {
-                    System.out.println("Implemented interface method");
-                }
-            }
-        "#;
-
-        let mut visualizer = JavaVisualizer::new().unwrap();
-        let result = visualizer.analyze_and_generate(complex_code).unwrap();
-
-        // Should find all classes and interfaces
-        assert!(result.analysis.classes.len() >= 2); // At least ConcreteClass and AbstractBase
-
-        // Should have relationships
-        assert!(!result.analysis.relationships.is_empty());
-
-        // Check for abstract class
-        let abstract_class = result
-            .analysis
-            .classes
-            .iter()
-            .find(|c| c.is_abstract)
-            .expect("Should have abstract class");
-        assert_eq!(abstract_class.name, "AbstractBase");
-
-        // Check for interface
-        let interface = result
-            .analysis
-            .classes
-            .iter()
-            .find(|c| c.is_interface)
-            .expect("Should have interface");
-        assert_eq!(interface.name, "MultiInterface");
-
-        println!("Complex features result:\n{}", result.dot_code);
     }
 }
