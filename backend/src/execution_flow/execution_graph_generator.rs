@@ -1,4 +1,6 @@
-use crate::execution_analyzer::{ExecutionAction, ExecutionFlow, ExecutionStep};
+use super::{
+    execution_analyzer::ExecutionAction, execution_analyzer::ExecutionStep, ExecutionFlow,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
