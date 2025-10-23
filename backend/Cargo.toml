@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-tree-sitter = "0.25.10"
+# pinned to resolve https://github.com/tree-sitter/tree-sitter/issues/4105
+tree-sitter = {git = "https://github.com/tree-sitter/tree-sitter", rev = "d29132512b1fd73eff25099a2f7181a70c07e985"}
 tree-sitter-java = "0.23.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
