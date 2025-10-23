@@ -1,8 +1,8 @@
 use crate::analyzer::{AnalysisResult, JavaAnalyzer};
-use crate::graph_generator::{GraphConfig, GraphGenerator};
+use crate::execution_flow::{ExecutionAnalyzer, ExecutionFlow};
+use crate::execution_flow::{ExecutionGraphConfig, ExecutionGraphGenerator, ExecutionGraphStep};
+use crate::no_flow::{GraphConfig, GraphGenerator};
 use crate::parser::JavaParser;
-use crate::execution_analyzer::{ExecutionAnalyzer, ExecutionFlow};
-use crate::execution_graph_generator::{ExecutionGraphGenerator, ExecutionGraphConfig, ExecutionGraphStep};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
@@ -105,9 +105,15 @@ impl JavaVisualizer {
     }
 
     /// Analyze execution flow starting from main method
-    pub fn analyze_execution_flow(&mut self, java_code: &str) -> Result<ExecutionVisualizationResult> {
+    pub fn analyze_execution_flow(
+        &mut self,
+        java_code: &str,
+    ) -> Result<ExecutionVisualizationResult> {
         // First do static analysis
-        let tree = self.parser.parse(java_code).context("Failed to parse Java code")?;
+        let tree = self
+            .parser
+            .parse(java_code)
+            .context("Failed to parse Java code")?;
         let root_node = self.parser.get_root_node(&tree);
         let static_analysis = self.analyzer.analyze(&root_node, java_code);
 
@@ -133,7 +139,10 @@ impl JavaVisualizer {
         execution_config: ExecutionGraphConfig,
     ) -> Result<ExecutionVisualizationResult> {
         // First do static analysis
-        let tree = self.parser.parse(java_code).context("Failed to parse Java code")?;
+        let tree = self
+            .parser
+            .parse(java_code)
+            .context("Failed to parse Java code")?;
         let root_node = self.parser.get_root_node(&tree);
         let static_analysis = self.analyzer.analyze(&root_node, java_code);
 
@@ -154,7 +163,10 @@ impl JavaVisualizer {
 
     /// Generate only execution flow without graphs (for performance)
     pub fn get_execution_flow_only(&mut self, java_code: &str) -> Result<ExecutionFlow> {
-        let tree = self.parser.parse(java_code).context("Failed to parse Java code")?;
+        let tree = self
+            .parser
+            .parse(java_code)
+            .context("Failed to parse Java code")?;
         let root_node = self.parser.get_root_node(&tree);
         let static_analysis = self.analyzer.analyze(&root_node, java_code);
 
