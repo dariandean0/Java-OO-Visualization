@@ -3,8 +3,17 @@
     <head>
         <meta charset="utf-8">
         <title>Java OO Visualizer</title>
-        <!--Load bootstrap 5 CSS stylesheet-->
+        <!--Load bootstrap 5 CSS stylesheet and PrismJS-->
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/codemirror.min.css">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/theme/darcula.min.css">
+
+        <style>
+            .CodeMirror{
+                width: 100%;
+                height: 100%;
+            }
+        </style>
     </head>
     <body>
         <!-- Navbar -->
@@ -27,27 +36,22 @@
                 <!--Code editor-->
                 <div class="col-6 d-flex flex-column" style="background-color: #FFFFFF; margin:0; padding:0;">
                     <div class="p-2 fw-bold" style="background-color: #DDDDDD;">Java Code Editor</div>
-                         <div class="rounded p-2 bg-dark d-flex" style="height:80vh;">
-                            <div id="lineNumbers" class="bg-dark text-light text-end pe-2 flex-shrink-0" style="user-select:none; width:40px; font-family: monospace; font-size: 0.9rem; line-height: 1.5rem; overflow:hidden;"></div>
-
-                            <textarea id="codeArea" class="form-control border-0 bg-dark text-light flex-grow-1" style="padding-top:0;resize:none; font-family:monospace; font-size:0.9rem; line-height:1.5rem; height:100%; overflow:auto; outline:none; box-shadow:none; border:none;" spellcheck="false"></textarea>
-                        </div>
-                        <!--Add dynamic line numbers to code editor-->
+                        <textarea id="codeArea"></textarea>
+                
+                        <!--Add codemirror-->
+                        <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/codemirror.min.js"></script>
+                        <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/mode/clike/clike.min.js"></script>
                         <script>
                             const CODE_AREA = document.getElementById('codeArea')
-                            const LINE_NUMBERS = document.getElementById('lineNumbers')
-
-                            function updateLines() {
-                                var lines = CODE_AREA.value.split('\n').length;
-                                LINE_NUMBERS.innerHTML = Array.from({length: lines}, (_, i) => i + 1).join('<br>');
-                            }
-
-                            CODE_AREA.addEventListener('input', updateLines);
-                            CODE_AREA.addEventListener('scroll', () => {
-                                LINE_NUMBERS.scrollTop = CODE_AREA.scrollTop;
+                            const EDITOR = CodeMirror.fromTextArea(CODE_AREA, {
+                                mode: "text/x-java",
+                                theme: "darcula",
+                                lineNumbers: true,
+                                indentUnit: 4,
+                                tabSize: 4,
+                                lineWrapping: true,
+                                matchBrackets: true,
                             });
-
-                            updateLines();
                         </script>
                     </div>
                 <!--Diagram-->
@@ -57,7 +61,7 @@
                 </div>
             </div>
         </div>
-        <!--Bootstrap JS code-->
+        <!--Bootstrap and PrismJS JS code-->
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
     </body>
 </html>
