@@ -36,21 +36,24 @@
                 <!--Code editor-->
                 <div class="col-6 d-flex flex-column" style="background-color: #FFFFFF; margin:0; padding:0;">
                     <div class="p-2 fw-bold" style="background-color: #DDDDDD;">Java Code Editor</div>
-                        <textarea id="codeArea"></textarea>
+                        <textarea id="codeArea">public static void main(String[] args) {}</textarea>
                 
                         <!--Add codemirror-->
                         <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/codemirror.min.js"></script>
                         <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/mode/clike/clike.min.js"></script>
+                        <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+                        <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
                         <script>
                             const CODE_AREA = document.getElementById('codeArea')
                             const EDITOR = CodeMirror.fromTextArea(CODE_AREA, {
                                 mode: "text/x-java",
-                                theme: "darcula",
+                                theme: "default",
                                 lineNumbers: true,
                                 indentUnit: 4,
                                 tabSize: 4,
                                 lineWrapping: true,
                                 matchBrackets: true,
+                                autoCloseBrackets: true,
                             });
                         </script>
                     </div>
