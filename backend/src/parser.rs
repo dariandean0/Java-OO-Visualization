@@ -9,9 +9,11 @@ impl JavaParser {
     pub fn new() -> Result<Self> {
         let mut parser = Parser::new();
         let language = tree_sitter_java::LANGUAGE.into();
+        // Note: tree_sitter::LanguageError doesn't implement std::error::Error,
+        // so we can't use .context() and must use map_err instead
         parser
             .set_language(&language)
-            .context("unable to call set_language")?;
+            .map_err(|e| anyhow::anyhow!("Failed to set language for parser: {e:?}"))?;
 
         Ok(JavaParser { parser })
     }

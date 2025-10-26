@@ -6,8 +6,8 @@ mod visualizer;
 
 use no_flow::GraphGenerator;
 use parser::JavaParser;
-
 use analyzer::JavaAnalyzer;
+use wasm_bindgen::prelude::*;
 pub fn execution_flow_gen(java_code: &str) -> Vec<String> {
     use execution_flow::{ExecutionAnalyzer, ExecutionGraphGenerator};
 
@@ -37,4 +37,25 @@ pub fn no_flow_gen(java_code: &str) -> String {
 
     let generator = GraphGenerator::new();
     generator.generate_dot(&analysis)
+}
+
+// WASM-compatible exports
+#[wasm_bindgen]
+pub fn wasm_execution_flow_gen(java_code: &str) -> String {
+    match execution_flow_gen(java_code) {
+        vec => serde_json::to_string(&vec).unwrap_or_else(|e| format!("Error serializing: {}", e)),
+    }
+}
+
+#[wasm_bindgen]
+pub fn wasm_no_flow_gen(java_code: &str) -> String {
+    no_flow_gen(java_code)
+}
+
+#[wasm_bindgen]
+pub fn wasm_visualize_java_code(java_code: &str) -> String {
+    match visualizer::visualize_java_code(java_code) {
+        Ok(result) => result,
+        Err(e) => format!("Error: {}", e),
+    }
 }

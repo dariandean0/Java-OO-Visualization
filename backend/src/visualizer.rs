@@ -5,7 +5,6 @@ use crate::no_flow::{GraphConfig, GraphGenerator};
 use crate::parser::JavaParser;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use wasm_bindgen::prelude::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VisualizationResult {
@@ -52,7 +51,6 @@ impl JavaVisualizer {
         })
     }
 
-    #[wasm_bindgen]
     pub fn generate_dot(&mut self, java_code: &str) -> Result<String> {
         let result = self.analyze_and_generate(java_code)?;
         Ok(result.dot_code)
