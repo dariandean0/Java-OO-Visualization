@@ -30,6 +30,15 @@
             </div>
         </nav>
 
+        <!--Import WASM-->
+        <script type="module">
+            import init, { wasm_execution_flow_gen, wasm_no_flow_gen, wasm_visualize_java_code } from "../wasm/backend.js"
+            await init();
+
+            var result = wasm_visualize_java_code("class A {}");
+            console.log(result);
+        </script>
+
         <!-- Code Editor & Diagram -->
         <div class="container-fluid">
             <div class="row" style="height:94vh;">
