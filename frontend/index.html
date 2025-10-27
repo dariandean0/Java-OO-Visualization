@@ -37,20 +37,13 @@
             (async () => {
                 const mod = await Module();
 
-                function callWasmC(funcName, jsString) {
-                    var ptr = mod.allocateUTF8(jsString);
-                    var len = mod.lengthBytesUTF8(jsString);
+                const wasmVisualizeJavaCode = mod.cwrap(
+                    'wasm_visualize_java_code',
+                    'string',
+                    ['string']
+                );
 
-                    var resultPtr = mod[funcName](ptr, len);
-
-                    var result = mod.UTF8ToString(resultPtr);
-                    mod._free(ptr);
-
-                    return result;
-                }
-
-                var visualizeJavaCode = callWasmC('_wasm_visualize_java_code', 'class Dog {}');
-                console.log(visualizeJavaCode);
+                console.log(wasmVisualizeJavaCode("class Dog {}"));
             })();
         </script>
 
