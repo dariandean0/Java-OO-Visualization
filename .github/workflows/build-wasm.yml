@@ -36,7 +36,7 @@ jobs:
 
       - name: Build backend with Emscripten
         working-directory: backend
-         run: |
+        run: |
           source $GITHUB_ENV
           cargo build --target wasm32-unknown-emscripten --release
 
