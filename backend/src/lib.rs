@@ -68,9 +68,12 @@ use std::os::raw::c_char;
 use std::slice;
 use std::str;
 
-fn ptr_to_str<'a>(ptr: *const u8, len: usize) -> &'a str {
+fn ptr_to_str<'a>(ptr: *const u8, len: usize) -> Result<&'a str, &'static str>{
+    if ptr.is_null() {
+        return Err("Null pointer recieved");
+    }
     let bytes = unsafe { slice::from_raw_parts(ptr, len) };
-    str::from_utf8(bytes).unwrap_or("")
+    str::from_utf8(bytes).map_err(|_| "Invalid UTF-8")
 }
 fn to_c_string(s: String) -> *mut c_char {
     CString::new(s).unwrap().into_raw()
