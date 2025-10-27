@@ -42,7 +42,7 @@ jobs:
           -C link-args=-sSTANDALONE_WASM=0 \
           -C link-args=-sEXPORTED_FUNCTIONS=["_wasm_execution_flow_gen","_wasm_no_flow_gen","_wasm_visualize_java_code"] \
           -C link-args=-sEXPORTED_RUNTIME_METHODS=["cwrap","UTF8ToString","stringToUTF8","lengthBytesUTF8"] \
-          -C link-args=-sWASM=1
+          -C link-args=-sWASM=1 \
           -C link-args=-o \
           -C link-args=backend.js"
           cargo build --lib --target wasm32-unknown-emscripten --release
