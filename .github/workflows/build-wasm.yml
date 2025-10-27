@@ -1,0 +1,49 @@
+name: Build WASM
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - "wasm/**"
+
+permissions:
+  contents: write
+
+jobs:
+  build-wasm:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install WASM
+        run: cargo install wasm-pack
+
+      - name: Build WASM
+        run: wasm-pack build --target web --release
+
+      - name: Move build output
+        run: |
+          rm -rf wasm
+          mkdir wasm
+          cp -r pkg/* wasm/
+          rm -rf pkg
+          echo "WASM files moved to /wasm"
+
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add wasm/
+          if ! git diff --cached --quiet; then
+            git commit -m "Auto-build WASM"
+            git push
+          else
+            echo "No changes to commit."
+          fi
