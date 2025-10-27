@@ -32,11 +32,12 @@
 
         <!--Import WASM-->
         <script type="module">
-            import init, { wasm_execution_flow_gen, wasm_no_flow_gen, wasm_visualize_java_code } from "../wasm/backend.js"
-            await init();
-
-            var result = wasm_visualize_java_code("class A {}");
-            console.log(result);
+            import Module from '../wasm/backend.js';
+            
+            Module().then(mod => {
+                var result = mod.wasm_visualize_java_code("class Dog {}");
+                console.log(result);
+            });
         </script>
 
         <!-- Code Editor & Diagram -->
