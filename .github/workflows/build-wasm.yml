@@ -37,7 +37,7 @@ jobs:
         working-directory: backend
         run: |
           source ../emsdk/emsdk_env.sh
-          RUSTFLAGS="-C link-args='-s STANDALONE_WASM=0 -s SIDE_MODULE=1'" \
+          export RUSTFLAGS="-C link-args=-sSTANDALONE_WASM=0 -C link-args=-sSIDE_MODULE=1"
           cargo build --target wasm32-unknown-emscripten --release
 
       - name: Move build output
