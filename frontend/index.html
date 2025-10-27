@@ -82,17 +82,17 @@
 
         <!--VizJS-->
         <script type="module">
-            import Viz from 'https://cdn.jsdelivr.net/npm/viz.js@2.1.2/dist/viz.esm.js';
-            import { Module, render } from 'https://cdn.jsdelivr.net/npm/viz.js@2.1.2/dist/full.render.js';
-
-            const viz = new Viz({ Module, render });
+            import vizJs from 'https://cdn.jsdelivr.net/npm/@viz-js/viz@3.20.0/+esm'
+            const viz = new vizJs();
 
             var dotCode = wasmVisualizeJavaCode("class Dog {}")
 
-            viz.renderSVGElement(dotCode).then(svgElement => {
-                document.getElementById('Graph').appendChild(svgElement);
-            })
-            .catch(e => console.error(e));
+            try {
+                var svg = await viz.renderSVGElement(dotCode)
+                document.getElementById('Graph').appendChild(svg)
+            } catch (e) {
+                console.error("VizJS error:", e);
+            }
             
         </script>
 
