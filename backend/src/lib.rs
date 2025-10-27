@@ -91,7 +91,7 @@ pub extern "C" fn wasm_no_flow_gen(ptr: *const u8, len: usize) -> *mut c_char {
     to_c_string(result)
 }
 
-/*#[unsafe(no_mangle)]
+#[unsafe(no_mangle)]
 pub extern "C" fn wasm_visualize_java_code(ptr: *const u8, len: usize) -> *mut c_char {
     let java_code = ptr_to_str(ptr, len);
     let result = match visualizer::visualize_java_code(java_code) {
@@ -99,13 +99,4 @@ pub extern "C" fn wasm_visualize_java_code(ptr: *const u8, len: usize) -> *mut c
         Err(e) => format!("Error: {}", e),
     };
     to_c_string(result)
-}*/
-
-//Testing only
-#[unsafe(no_mangle)]
-pub extern "C" fn wasm_visualize_java_code(ptr: *const u8, len: usize) -> *mut c_char {
-    let java_code = ptr_to_str(ptr, len);
-    let result = format!("digraph G {{ A -> B; B -> C; C -> A; }}");
-    to_c_string(result)
 }
-
