@@ -38,14 +38,27 @@ jobs:
         run: |
           source ../emsdk/emsdk_env.sh
           export CFLAGS="-fPIC"
-          export RUSTFLAGS="-C link-args=-sSIDE_MODULE=0 -C link-args=-sMODULARIZE -C link-args=-sEXPORT_ES6=1 -C link-args=-sENVIRONMENT=web -C link-args=--no-entry -C link-args=-sEXPORTED_FUNCTIONS=["_wasm_execution_flow_gen","_wasm_no_flow_gen","_wasm_visualize_java_code"] -C link-args=-sEXPORTED_RUNTIME_METHODS=["cwrap","UTF8ToString","stringToUTF8","lengthBytesUTF8"]"
+          export RUSTFLAGS="-C link-args=--no-entry -C link-args=-sEXPORTED_FUNCTIONS=["_wasm_execution_flow_gen","_wasm_no_flow_gen","_wasm_visualize_java_code"] -C link-args=-sEXPORTED_RUNTIME_METHODS=["cwrap","UTF8ToString","stringToUTF8","lengthBytesUTF8"]"
           cargo build --lib --target wasm32-unknown-emscripten --release
+
+      - name: Generate JS from .wasm
+        working-directory: backend
+        run: |
+          source ../emsdk/emsdk_env.sh
+          emcc target/wasm32-unknown-emscripten/release/backend.wasm \
+            -o backend.js \
+            -s MODULARIZE=1 \
+            -s EXPORT_ES6=1 \
+            -s EXPORTED_FUNCTIONS=["_wasm_execution_flow_gen","_wasm_no_flow_gen","_wasm_visualize_java_code"] \
+            -s EXPORTED_RUNTIME_METHODS=["cwrap","UTF8ToString","stringToUTF8","lengthBytesUTF8"] \
+            -s ENVIRONMENT=web
 
       - name: Move build output
         run: |
           rm -rf wasm
           mkdir wasm
           cp -r backend/target/wasm32-unknown-emscripten/release/*.{wasm,js} wasm/ || true
+          cp backend/backend.js wasm/
           rm -rf backend/target
           echo "WASM files moved to /wasm"
 
