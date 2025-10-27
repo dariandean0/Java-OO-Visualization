@@ -38,7 +38,7 @@ jobs:
         run: |
           source ../emsdk/emsdk_env.sh
           export CFLAGS="-fPIC"
-          export RUSTFLAGS="-C link-args=-sSTANDALONE_WASM=0 -C link-args=-sSIDE_MODULE=1 -C link-args=-sEXPORTED_FUNCTIONS=['_wasm_execution_flow_gen','_wasm_no_flow_gen','_wasm_visualize_java_code'] -C link-args=-sEXPORTED_RUNTIME_METHODS=['cwrap','UTF8ToString','stringToUTF8','lengthBytesUTF8']"
+          export RUSTFLAGS="-C link-args=-sSTANDALONE_WASM=0 -C link-args=-sSIDE_MODULE=1 -C link-arg=-sEXPORTED_FUNCTIONS=['_wasm_execution_flow_gen','_wasm_no_flow_gen','_wasm_visualize_java_code'] -C link-arg=-sEXPORTED_RUNTIME_METHODS=['cwrap','UTF8ToString','stringToUTF8','lengthBytesUTF8']"
           cargo build --target wasm32-unknown-emscripten --release
 
       - name: Move build output
