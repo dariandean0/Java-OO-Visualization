@@ -33,7 +33,7 @@
         <!--Import WASM-->
         <script type="module">
             import Module from '../wasm/backend.js';
-            import vizJsviz from 'https://cdn.jsdelivr.net/npm/@viz-js/viz@3.20.0/+esm'
+            import * as Viz from 'https://cdn.jsdelivr.net/npm/@viz-js/viz@3.20.0/+esm'
 
             (async () => {
                 const mod = await Module();
@@ -48,12 +48,10 @@
                 //VizJS
                 var dotCode = wasmVisualizeJavaCode("class Dog {}")
                 
-                try {
-                    var svg = await vizJsviz().renderSVGElement(dotCode)
-                    document.getElementById('Graph').appendChild(svg)
-                } catch (e) {
-                    console.error("VizJS error:", e);
-                }
+                Viz.instance().then(viz => {
+                    const svg = viz.renderSVGElement(dotCode);
+                    document.getElementById('graph').appendChild(svg);
+                });
             })();
         </script>
 
