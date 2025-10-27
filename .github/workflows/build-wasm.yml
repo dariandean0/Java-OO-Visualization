@@ -24,7 +24,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Add WASM Emscripten target
-        run: rustup target add wasm32-unknown-Emscripten
+        run: rustup target add wasm32-unknown-emscripten
 
       - name: Install Emscripten
         run: |
