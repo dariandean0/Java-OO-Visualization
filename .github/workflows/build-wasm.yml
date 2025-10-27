@@ -23,19 +23,29 @@ jobs:
       - name: Install rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install WASM
-        run: cargo install wasm-pack
+      - name: Add WASM Emscripten target
+        run: rustup target add wasm32-unknown-Emscripten
 
-      - name: Build WASM
+      - name: Install Emscripten
+        run: |
+          git clone https://github.com/emscripten-core/emsdk.git
+          cd emsdk
+          ./emsdk install latest
+          ./emsdk activate latest
+          echo "source $(pwd)/emsdk_env.sh" >> $GITHUB_ENV
+
+      - name: Build backend with Emscripten
         working-directory: backend
-        run: wasm-pack build --target web --release
+         run: |
+          source $GITHUB_ENV
+          cargo build --target wasm32-unknown-emscripten --release
 
       - name: Move build output
         run: |
           rm -rf wasm
           mkdir wasm
-          cp -r backend/pkg/* wasm/
-          rm -rf backend/pkg
+          cp -r backend/target/wasm32-unknown-emscripten/release/*.{wasm,js} wasm/ || true
+          rm -rf backend/target
           echo "WASM files moved to /wasm"
 
       - name: Commit
