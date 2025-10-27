@@ -3,6 +3,8 @@ name: Build WASM
 on:
   push:
     branches: [ main ]
+    paths:
+      - "backend/**"
     paths-ignore:
       - "wasm/**"
 
@@ -26,14 +28,15 @@ jobs:
         run: cargo install wasm-pack
 
       - name: Build WASM
+        working-directory: backend
         run: wasm-pack build --target web --release
 
       - name: Move build output
         run: |
           rm -rf wasm
           mkdir wasm
-          cp -r pkg/* wasm/
-          rm -rf pkg
+          cp -r backend/pkg/* wasm/
+          rm -rf backend/pkg
           echo "WASM files moved to /wasm"
 
       - name: Commit
