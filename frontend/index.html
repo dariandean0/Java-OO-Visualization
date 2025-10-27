@@ -38,6 +38,12 @@
             (async () => {
                 const mod = await Module();
 
+                const wasmNoFlowGen = mod.cwrap(
+                    'wasm_no_flow_gen',
+                    'string',
+                    ['string']
+                );
+
                 const wasmVisualizeJavaCode = mod.cwrap(
                     'wasm_visualize_java_code',
                     'string',
@@ -46,7 +52,7 @@
 
 
                 //VizJS
-                var dotCode = wasmVisualizeJavaCode("class Dog {}")
+                var dotCode = wasmNoFlowGen("class Dog {}")
                 
                 Viz.instance().then(viz => {
                     const svg = viz.renderSVGElement(dotCode);
