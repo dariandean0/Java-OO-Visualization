@@ -15,7 +15,3 @@ wasm-bindgen = "0.2"
 [lib]
 crate-type = ["cdylib"]
 
-#[[bin]]
-#name = "gen_steps"
-#test = false
-#bench = false
