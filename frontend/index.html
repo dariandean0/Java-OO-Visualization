@@ -83,12 +83,11 @@
         <!--VizJS-->
         <script type="module">
             import vizJsviz from 'https://cdn.jsdelivr.net/npm/@viz-js/viz@3.20.0/+esm'
-            const viz = new vizJsviz();
 
             var dotCode = wasmVisualizeJavaCode("class Dog {}")
 
             try {
-                var svg = await viz.renderSVGElement(dotCode)
+                var svg = await vizJsviz().renderSVGElement(dotCode)
                 document.getElementById('Graph').appendChild(svg)
             } catch (e) {
                 console.error("VizJS error:", e);
