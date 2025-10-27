@@ -43,6 +43,18 @@
                     ['string']
                 );
             })();
+
+            //VizJS
+            import vizJsviz from 'https://cdn.jsdelivr.net/npm/@viz-js/viz@3.20.0/+esm'
+
+            var dotCode = wasmVisualizeJavaCode("class Dog {}")
+
+            try {
+                var svg = await vizJsviz().renderSVGElement(dotCode)
+                document.getElementById('Graph').appendChild(svg)
+            } catch (e) {
+                console.error("VizJS error:", e);
+            }
         </script>
 
         <!-- Code Editor & Diagram -->
@@ -79,22 +91,6 @@
                 </div>
             </div>
         </div>
-
-        <!--VizJS-->
-        <script type="module">
-            import vizJsviz from 'https://cdn.jsdelivr.net/npm/@viz-js/viz@3.20.0/+esm'
-
-            var dotCode = wasmVisualizeJavaCode("class Dog {}")
-
-            try {
-                var svg = await vizJsviz().renderSVGElement(dotCode)
-                document.getElementById('Graph').appendChild(svg)
-            } catch (e) {
-                console.error("VizJS error:", e);
-            }
-            
-        </script>
-
         <!--Bootstrap-->
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
     </body>
