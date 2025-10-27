@@ -51,9 +51,7 @@ jobs:
         run: |
           rm -rf wasm
           mkdir wasm
-          cp -r backend/target/wasm32-unknown-emscripten/release/*.{wasm,js} wasm/ || true
-          cp backend/backend.js wasm/
-          rm -rf backend/target
+          cp backend/*.{wasm,js} wasm/
           echo "WASM files moved to /wasm"
 
       - name: Commit
