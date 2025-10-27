@@ -58,7 +58,19 @@
 
 
                 //VizJS
-                var dotCode = wasmExecFlowGen("class Dog {}")
+                var dotCode = wasmNoFlowGen(`
+                class A {
+                    void f() {}
+                }
+
+                class B {
+                    void g() {}
+                }
+
+                class C extends A {
+                    void h() {}
+                }               
+                `)
                 console.log(dotCode);
                 
                 Viz.instance().then(viz => {
