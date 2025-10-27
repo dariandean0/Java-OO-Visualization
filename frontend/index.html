@@ -65,7 +65,7 @@
                 
                     Viz.instance().then(viz => {
                     const svg = viz.renderSVGElement(dotCode);
-                    document.getElementById('Graph').innerHTML = "";
+                    document.getElementById('Graph').innerHTML = "<div class='p-2 fw-bold' style='background-color: #DDDDDD;'>Memory Diagram</div>";
                     document.getElementById('Graph').appendChild(svg);
                 });
                 })
@@ -77,7 +77,7 @@
             <div class="row" style="height:94vh;">
                 <!--Code editor-->
                 <div class="col-6 d-flex flex-column" style="background-color: #FFFFFF; margin:0; padding:0;">
-                    <div class="p-2 fw-bold" style="background-color: #DDDDDD;">Java Code Editor <button id="generate" class="btn btn-success btn-sm">Generate</button></div>
+                    <div class="p-1 fw-bold" style="background-color: #DDDDDD;">Java Code Editor <button id="generate" class="btn btn-success btn-sm">Generate</button></div>
                         <textarea id="codeArea">public static void main(String[] args) {}</textarea>
                 
                         <!--Add codemirror-->
@@ -105,7 +105,7 @@
                     </div>
                 <!--Diagram-->
                 <div id="Graph" class="col-6 d-flex flex-column" style="background-color: #FAFAFA; margin:0; padding:0;">
-                    <div class="p-3 fw-bold" style="background-color: #DDDDDD;">Memory Diagram</div>
+                    <div class="p-2 fw-bold" style="background-color: #DDDDDD;">Memory Diagram</div>
                     </div>
                 </div>
             </div>
