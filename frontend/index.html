@@ -65,6 +65,7 @@
                 
                     Viz.instance().then(viz => {
                     const svg = viz.renderSVGElement(dotCode);
+                    document.getElementById('Graph').innerHTML = "";
                     document.getElementById('Graph').appendChild(svg);
                 });
                 })
@@ -104,7 +105,7 @@
                     </div>
                 <!--Diagram-->
                 <div id="Graph" class="col-6 d-flex flex-column" style="background-color: #FAFAFA; margin:0; padding:0;">
-                    <div class="p-2 fw-bold" style="background-color: #DDDDDD;">Memory Diagram</div>
+                    <div class="p-3 fw-bold" style="background-color: #DDDDDD;">Memory Diagram</div>
                     </div>
                 </div>
             </div>
