@@ -53,6 +53,7 @@
 
                 //VizJS
                 var dotCode = wasmNoFlowGen("class Dog {}")
+                console.log(dotCode);
                 
                 Viz.instance().then(viz => {
                     const svg = viz.renderSVGElement(dotCode);
