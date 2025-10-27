@@ -38,6 +38,12 @@
             (async () => {
                 const mod = await Module();
 
+                const wasmExecFlowGen = mod.cwrap(
+                    'wasm_execution_flow_gen',
+                    'string',
+                    ['string']
+                );
+
                 const wasmNoFlowGen = mod.cwrap(
                     'wasm_no_flow_gen',
                     'string',
@@ -52,7 +58,7 @@
 
 
                 //VizJS
-                var dotCode = wasmNoFlowGen("class Dog {}")
+                var dotCode = wasmExecFlowGen("class Dog {}")
                 console.log(dotCode);
                 
                 Viz.instance().then(viz => {
