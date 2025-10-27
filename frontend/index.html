@@ -3,7 +3,7 @@
     <head>
         <meta charset="utf-8">
         <title>Java OO Visualizer</title>
-        <!--Load bootstrap 5 CSS stylesheet and PrismJS-->
+        <!--Load bootstrap 5 CSS stylesheet-->
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/codemirror.min.css">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/theme/darcula.min.css">
@@ -82,8 +82,8 @@
 
         <!--VizJS-->
         <script type="module">
-            import vizJs from 'https://cdn.jsdelivr.net/npm/@viz-js/viz@3.20.0/+esm'
-            const viz = new vizJs();
+            import vizJsviz from 'https://cdn.jsdelivr.net/npm/@viz-js/viz@3.20.0/+esm'
+            const viz = new vizJsviz();
 
             var dotCode = wasmVisualizeJavaCode("class Dog {}")
 
@@ -96,7 +96,7 @@
             
         </script>
 
-        <!--Bootstrap and PrismJS JS code-->
+        <!--Bootstrap-->
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
     </body>
 </html>
