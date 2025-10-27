@@ -13,6 +13,8 @@
                 width: 100%;
                 height: 100%;
             }
+            .page { display: none; }
+            .active { display: block; }
         </style>
     </head>
     <body>
@@ -22,13 +24,20 @@
                 <a class="navbar-brand me-4"><strong>Java OO Visualizer</strong></a>
                 <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                     <form>
-                        <button class="btn btn-primary me-2" href="#">Main Visualizer</a>
-                        <button class="btn btn-outline-primary me-2" href="#">Diagram Creator</a>
-                        <button class="btn btn-outline-primary" href="#">Diagram Comparer</a>
+                        <button onclick="goTo('Visualizer')" class="btn btn-primary me-2" href="#">Main Visualizer</a>
+                        <button onclick="goTo('Creator')" class="btn btn-outline-primary me-2" href="#">Diagram Creator</a>
+                        <button onclick="goTo('Comparer')" class="btn btn-outline-primary" href="#">Diagram Comparer</a>
                     </form>
                 </ul>
             </div>
         </nav>
+        <!--Pages-->
+        <script>
+            function goTo(page){
+                document.querySelectorAll('.page').forEach(p => p.classList.remove('pactive'));
+                document.getElementById(page).classList.add('pactive');
+            }
+        </script>
 
         <!--Import WASM-->
         <script type="module">
@@ -72,43 +81,50 @@
             })();
         </script>
 
-        <!-- Code Editor & Diagram -->
-        <div class="container-fluid">
-            <div class="row" style="height:94vh;">
-                <!--Code editor-->
-                <div class="col-6 d-flex flex-column" style="background-color: #FFFFFF; margin:0; padding:0;">
-                    <div class="p-1 fw-bold" style="background-color: #DDDDDD;">Java Code Editor <button id="generate" class="btn btn-success btn-sm">Generate</button></div>
-                        <textarea id="codeArea">public static void main(String[] args) {}</textarea>
-                
-                        <!--Add codemirror-->
-                        <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/codemirror.min.js"></script>
-                        <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/mode/clike/clike.min.js"></script>
-                        <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
-                        <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
-                        <script>
-                            const CODE_AREA = document.getElementById('codeArea')
-                            const EDITOR = CodeMirror.fromTextArea(CODE_AREA, {
-                                mode: "text/x-java",
-                                theme: "default",
-                                lineNumbers: true,
-                                indentUnit: 4,
-                                tabSize: 4,
-                                lineWrapping: true,
-                                matchBrackets: true,
-                                autoCloseBrackets: true,
-                            });
+        <div id="Main" class="page pactive">
+            <!-- Code Editor & Diagram -->
+            <div class="container-fluid">
+                <div class="row" style="height:94vh;">
+                    <!--Code editor-->
+                    <div class="col-6 d-flex flex-column" style="background-color: #FFFFFF; margin:0; padding:0;">
+                        <div class="p-1 fw-bold" style="background-color: #DDDDDD;">Java Code Editor <button id="generate" class="btn btn-success btn-sm">Generate</button></div>
+                            <textarea id="codeArea">public static void main(String[] args) {}</textarea>
+                    
+                            <!--Add codemirror-->
+                            <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/codemirror.min.js"></script>
+                            <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/mode/clike/clike.min.js"></script>
+                            <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+                            <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+                            <script>
+                                const CODE_AREA = document.getElementById('codeArea')
+                                const EDITOR = CodeMirror.fromTextArea(CODE_AREA, {
+                                    mode: "text/x-java",
+                                    theme: "default",
+                                    lineNumbers: true,
+                                    indentUnit: 4,
+                                    tabSize: 4,
+                                    lineWrapping: true,
+                                    matchBrackets: true,
+                                    autoCloseBrackets: true,
+                                });
 
-                            function getEditorContent() {
-                                return EDITOR.getValue();
-                            }
-                        </script>
-                    </div>
-                <!--Diagram-->
-                <div id="Graph" class="col-6 d-flex flex-column" style="background-color: #FAFAFA; margin:0; padding:0;">
-                    <div class="p-2 fw-bold" style="background-color: #DDDDDD;">Memory Diagram</div>
+                                function getEditorContent() {
+                                    return EDITOR.getValue();
+                                }
+                            </script>
+                        </div>
+                    <!--Diagram-->
+                    <div id="Graph" class="col-6 d-flex flex-column" style="background-color: #FAFAFA; margin:0; padding:0;">
+                        <div class="p-2 fw-bold" style="background-color: #DDDDDD;">Memory Diagram</div>
                     </div>
                 </div>
             </div>
+        </div>
+        <div id="Creator" class="page">
+
+        </div>
+        <div id="Comparer" class="page">
+
         </div>
         <!--Bootstrap-->
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
