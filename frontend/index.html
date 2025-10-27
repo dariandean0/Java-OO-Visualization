@@ -34,10 +34,24 @@
         <script type="module">
             import Module from '../wasm/backend.js';
             
-            Module().then(mod => {
-                var result = mod.wasm_visualize_java_code("class Dog {}");
-                console.log(result);
-            });
+            (async () => {
+                const mod = await Module();
+
+                function callWasmC(funcName, jsString) {
+                    var ptr = mod.allocateUTF8(jsString);
+                    var len = mod.lengthBytesUTF8(jsString);
+
+                    var resultPtr = mod[funcName](ptr, len);
+
+                    var result = mod.UTF8ToString(resultPtr);
+                    mod._free(ptr);
+
+                    return result;
+                }
+
+                var visualizeJavaCode = callWasmC('_wasm_visualize_java_code', 'class Dog {}');
+                console.log(visualizeJavaCode);
+            })();
         </script>
 
         <!-- Code Editor & Diagram -->
