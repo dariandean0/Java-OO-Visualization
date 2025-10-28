@@ -76,17 +76,40 @@
 
 
                 //VizJS
-                const generateButton = document.getElementById("generate")
-                generateButton.addEventListener("click", async () => {
+
+                function debounce(fn, delay){
+                    var timeout;
+                    return (...args) => {
+                        clearTimeout(timeout);
+                        timeout = setTimeout(() => fn(...args), delay);
+                    };
+                }
+
+                async function update(){
                     var dotCode = wasmVisualizeJavaCode(getEditorContent())
-                    console.log(dotCode);
                 
                     Viz.instance().then(viz => {
-                    const svg = viz.renderSVGElement(dotCode);
-                    document.getElementById('Graph').innerHTML = "<div class='p-2 fw-bold' style='background-color: #DDDDDD;'>Memory Diagram</div>";
-                    document.getElementById('Graph').appendChild(svg);
-                });
-                })
+                        const svg = viz.renderSVGElement(dotCode);
+                        document.getElementById('Graph').innerHTML = "<div class='p-2 fw-bold' style='background-color: #DDDDDD;'>Memory Diagram</div>";
+                        document.getElementById('Graph').appendChild(svg);
+                    });
+                }
+
+                const debouncedUpdate = debounce(update, 500);
+
+                EDITOR.on("change", debouncedUpdate);
+
+                //const generateButton = document.getElementById("generate")
+                //generateButton.addEventListener("click", async () => {
+                //    var dotCode = wasmVisualizeJavaCode(getEditorContent())
+                //    console.log(dotCode);
+                //
+                //    Viz.instance().then(viz => {
+                //    const svg = viz.renderSVGElement(dotCode);
+                //    document.getElementById('Graph').innerHTML = "<div class='p-2 fw-bold' style='background-color: #DDDDDD;'>Memory Diagram</div>";
+                //    document.getElementById('Graph').appendChild(svg);
+                //});
+                //})
             })();
         </script>
 
