@@ -75,7 +75,7 @@
                 );
 
 
-                //VizJS
+                //VizJS live update
 
                 function debounce(fn, delay){
                     var timeout;
@@ -85,7 +85,7 @@
                     };
                 }
 
-                async function update(){
+                async function update(){https://dariandean0.github.io/Java-OO-Visualization/frontend/
                     var dotCode = wasmVisualizeJavaCode(getEditorContent())
                 
                     Viz.instance().then(viz => {
@@ -119,7 +119,7 @@
                 <div class="row" style="height:94vh;">
                     <!--Code editor-->
                     <div class="col-6 d-flex flex-column" style="background-color: #FFFFFF; margin:0; padding:0;">
-                        <div class="p-1 fw-bold" style="background-color: #DDDDDD;">Java Code Editor <button id="generate" class="btn btn-success btn-sm">Generate</button></div>
+                        <div class="p-2 fw-bold" style="background-color: #DDDDDD;">Java Code Editor</div>
                             <textarea id="codeArea">public static void main(String[] args) {}</textarea>
                     
                             <!--Add codemirror-->
