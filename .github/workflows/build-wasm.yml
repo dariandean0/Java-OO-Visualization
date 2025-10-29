@@ -45,8 +45,7 @@ jobs:
           -C link-args=-sEXPORT_ES6=1 \
           -C link-args=-o \
           -C link-args=backend.js \
-          -C opt-level=s \
-          -C lto=true"
+          -C opt-level=s"
           cargo build --lib --target wasm32-unknown-emscripten --release
 
       - name: Move build output
