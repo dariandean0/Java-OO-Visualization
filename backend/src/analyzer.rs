@@ -363,10 +363,8 @@ impl JavaAnalyzer {
     fn extract_implements(&self, interfaces_node: &Node, source: &str) -> Vec<String> {
         let mut interfaces = Vec::new();
         let mut cursor = interfaces_node.walk();
-        for child in interfaces_node.children(&mut cursor) {
-            if child.kind() == "type_identifier" {
-                interfaces.push(node_text(&child, source).to_string());
-            }
+        for child in interfaces_node.children(&mut cursor).skip(1) {
+            interfaces.push(node_text(&child, source).to_string());
         }
         interfaces
     }
@@ -442,5 +440,25 @@ mod tests {
         assert_eq!(result.classes[0].name, "TestClass");
         assert_eq!(result.classes[0].visibility, "public");
         assert_eq!(result.classes[0].extends, Some("BaseClass".to_string()));
+    }
+
+    #[test]
+    fn test_implements() {
+        let mut parser = JavaParser::new().unwrap();
+        let code = r#"
+public interface Trainable {}
+
+public abstract class Animal {}
+
+public class Dog extends Animal implements Trainable {}
+"#;
+
+        let tree = parser.parse(code).unwrap();
+        let root = parser.get_root_node(&tree);
+
+        let mut analyzer = JavaAnalyzer::new();
+        let result = analyzer.analyze(&root, code);
+
+        assert_eq!(result.classes[2].implements, vec!["Trainable"]);
     }
 }

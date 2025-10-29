@@ -2,9 +2,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::process::Command;
 
-
 fn main() {
-   
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 3 {
         eprintln!("Usage: cargo run --bin diff_diagrams <file1.dot> <file2.dot>");
@@ -19,7 +17,6 @@ fn main() {
 
     let mut output = String::from("digraph diff {\n");
 
- 
     for line in &set1 {
         if line.contains("->") {
             let formatted = line.trim_end_matches(';').to_string();
@@ -44,7 +41,6 @@ fn main() {
 
     fs::write("diff.dot", &output).expect("Failed to write diff.dot");
 
- 
     let result = Command::new("dot")
         .args(["-Tpng", "diff.dot", "-o", "diff.png"])
         .status();
@@ -58,4 +54,3 @@ fn main() {
         }
     }
 }
-
