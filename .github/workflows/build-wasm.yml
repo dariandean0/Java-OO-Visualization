@@ -58,7 +58,7 @@ jobs:
       - name: Run wasm-opt
         run: |
           cd wasm
-          wasm-opt -Os backend_new.wasm backend.wasm
+          wasm-opt -Os backend.wasm -o backend_new.wasm
           mv backend_new.wasm backend.wasm
 
       - name: Commit
