@@ -44,8 +44,8 @@ jobs:
           -C link-args=-sWASM=1 \
           -C link-args=-sEXPORT_ES6=1 \
           -C link-args=-o \
-          -C link-args=backend.js
-          -C opt-level=\"s\"
+          -C link-args=backend.js \
+          -C opt-level=\"s\" \
           -C lto=true"
           cargo build --lib --target wasm32-unknown-emscripten --release
 
