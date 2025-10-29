@@ -19,3 +19,8 @@ crate-type = ["cdylib"]
 name = "gen_steps"
 test = false
 bench = false
+
+[[bin]]
+name = "gen_graph"
+test = false
+bench = false
