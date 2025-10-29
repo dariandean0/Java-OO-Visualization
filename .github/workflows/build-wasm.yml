@@ -3,8 +3,8 @@ name: Build WASM
 on:
   push:
     branches: [ wasm-binaries ]
-    paths:
-      - "backend/**"
+#    paths:
+#      - "backend/**"
   workflow_dispatch:
 
 permissions:
