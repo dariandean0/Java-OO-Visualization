@@ -29,6 +29,9 @@ jobs:
           ./emsdk install latest
           ./emsdk activate latest
 
+      - name: Install binaryen
+        run: sudo apt install binaryen
+
       - name: Build backend with Emscripten
         working-directory: backend
         run: |
@@ -42,7 +45,7 @@ jobs:
           -C link-args=-sEXPORT_ES6=1 \
           -C link-args=-o \
           -C link-args=backend.js"
-          cargo build --lib --target wasm32-unknown-emscripten --release
+          cargo build --lib --target wasm32-unknown-emscripten --release -Copt-level="s" -Clto=true
 
       - name: Move build output
         run: |
@@ -50,6 +53,12 @@ jobs:
           mkdir wasm
           cp backend/*.{wasm,js} wasm/
           echo "WASM files moved to /wasm"
+
+      - name: Run wasm-opt
+        run: |
+          cd wasm
+          wasm-opt -Os backend_new.wasm backend.wasm
+          mv backend_new.wasm backend.wasm
 
       - name: Commit
         run: |
