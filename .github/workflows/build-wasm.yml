@@ -29,8 +29,8 @@ jobs:
           ./emsdk install latest
           ./emsdk activate latest
 
-      - name: Install binaryen
-        run: sudo apt install binaryen
+      # - name: Install binaryen
+      #   run: sudo apt install binaryen
 
       - name: Build backend with Emscripten
         working-directory: backend
@@ -55,11 +55,11 @@ jobs:
           cp backend/*.{wasm,js} wasm/
           echo "WASM files moved to /wasm"
 
-      - name: Run wasm-opt
-        run: |
-          cd wasm
-          wasm-opt --detect-features --enable-bulk-memory -Os backend.wasm -o backend_new.wasm
-          mv backend_new.wasm backend.wasm
+      # - name: Run wasm-opt
+      #   run: |
+      #     cd wasm
+      #     wasm-opt --detect-features --enable-bulk-memory -Os backend.wasm -o backend_new.wasm
+      #     mv backend_new.wasm backend.wasm
 
       - name: Commit
         run: |
