@@ -58,7 +58,7 @@ jobs:
       - name: Run wasm-opt
         run: |
           cd wasm
-          wasm-opt --detect-features -Os backend.wasm -o backend_new.wasm
+          wasm-opt --detect-features --enable-bulk-memory -Os backend.wasm -o backend_new.wasm
           mv backend_new.wasm backend.wasm
 
       - name: Commit
