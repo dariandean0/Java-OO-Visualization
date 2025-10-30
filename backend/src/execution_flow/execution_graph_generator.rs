@@ -1,5 +1,5 @@
-use super::execution_analyzer::{ExecutionAction, ExecutionStep};
 use super::ExecutionFlow;
+use super::execution_analyzer::{ExecutionAction, ExecutionStep};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -386,8 +386,8 @@ impl ExecutionGraphGenerator {
 
 #[cfg(test)]
 mod tests {
+    use super::super::execution_analyzer::{ExecutionAction, ExecutionStep};
     use super::*;
-    use crate::execution_analyzer::{ExecutionAction, ExecutionStep};
 
     #[test]
     fn test_execution_graph_generation() {

@@ -4,9 +4,9 @@ mod no_flow;
 mod parser;
 mod visualizer;
 
+use analyzer::JavaAnalyzer;
 use no_flow::GraphGenerator;
 use parser::JavaParser;
-use analyzer::JavaAnalyzer;
 //use wasm_bindgen::prelude::*;
 pub fn execution_flow_gen(java_code: &str) -> Vec<String> {
     use execution_flow::{ExecutionAnalyzer, ExecutionGraphGenerator};

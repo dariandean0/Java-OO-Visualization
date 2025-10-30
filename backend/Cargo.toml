@@ -13,9 +13,14 @@ anyhow = { version = "1.0.100", features = ["backtrace"] }
 wasm-bindgen = "0.2"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["rlib", "cdylib"]
 
 [[bin]]
 name = "gen_steps"
+test = false
+bench = false
+
+[[bin]]
+name = "gen_graph"
 test = false
 bench = false
