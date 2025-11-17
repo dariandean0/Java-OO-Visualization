@@ -154,6 +154,7 @@ if (canvas) {
    canvas.addEventListener('mousedown', handleMouseDown);
    canvas.addEventListener('mousemove', handleMouseMove);
    canvas.addEventListener('mouseup', handleMouseUp);
+   canvas.addEventListener('dblclick', handleDoubleClick);
 }
 
 function handleMouseDown(e) {
@@ -173,11 +174,13 @@ function handleMouseDown(e) {
                dragOffsetX = x - selectedShape.startX;
                dragOffsetY = y - selectedShape.startY;
             }
+            updatePropertyEditor();
             redraw();
             return;
          }
       }
       selectedShape = null;
+      updatePropertyEditor();
       redraw();
    } else {
       isDrawing = true;
@@ -267,6 +270,16 @@ function handleMouseUp(e) {
       redraw();
    }
    isDragging = false;
+}
+
+function handleDoubleClick(e) {
+    if (selectedShape && selectedShape.type !== 'text' && selectedShape.type !== 'line' && selectedShape.type !== 'arrow') {
+        const text = prompt('Enter label:', selectedShape.text);
+        if (text !== null) {
+            selectedShape.text = text;
+            redraw();
+        }
+    }
 }
 
 function redraw() {
