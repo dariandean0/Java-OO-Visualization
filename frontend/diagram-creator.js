@@ -102,3 +102,122 @@ if (canvas) {
    canvas.addEventListener('mousemove', handleMouseMove);
    canvas.addEventListener('mouseup', handleMouseUp);
 }
+
+function handleMouseDown(e) {
+   const rect = canvas.getBoundingClientRect();
+   const x = e.clientX - rect.left;
+   const y = e.clientY - rect.top;
+    
+   if (currentTool === 'select') {
+      // Check if clicking on existing shape
+      for (let i = shapes.length - 1; i >= 0; i--) {
+         if (shapes[i].contains(x, y)) {
+            selectedShape = shapes[i];
+            isDragging = true;
+            dragOffsetX = x - selectedShape.x;
+            dragOffsetY = y - selectedShape.y;
+            if (selectedShape.type === 'line' || selectedShape.type === 'arrow') {
+               dragOffsetX = x - selectedShape.startX;
+               dragOffsetY = y - selectedShape.startY;
+            }
+            redraw();
+            return;
+         }
+      }
+      selectedShape = null;
+      redraw();
+   } else {
+      isDrawing = true;
+      startX = x;
+      startY = y;
+   }
+}
+
+function handleMouseMove(e) {
+   const rect = canvas.getBoundingClientRect();
+   const x = e.clientX - rect.left;
+   const y = e.clientY - rect.top;
+    
+   if (isDragging && selectedShape) {
+      if (selectedShape.type === 'line' || selectedShape.type === 'arrow') {
+         const dx = x - dragOffsetX - selectedShape.startX;
+         const dy = y - dragOffsetY - selectedShape.startY;
+         selectedShape.startX += dx;
+         selectedShape.startY += dy;
+         selectedShape.endX += dx;
+         selectedShape.endY += dy;
+      } else {
+         selectedShape.x = x - dragOffsetX;
+         selectedShape.y = y - dragOffsetY;
+      }
+      redraw();
+   } else if (isDrawing) {
+      redraw();
+      ctx.strokeStyle = '#666';
+      ctx.setLineDash([5, 5]);
+        
+      const width = x - startX;
+      const height = y - startY;
+        
+      switch(currentTool) {
+         case 'circle':
+            ctx.beginPath();
+            const radius = Math.min(Math.abs(width), Math.abs(height)) / 2;
+            ctx.arc(startX + width/2, startY + height/2, radius, 0, 2 * Math.PI);
+            ctx.stroke();
+            break;
+         case 'rectangle':
+            ctx.strokeRect(startX, startY, width, height);
+            break;
+         case 'line':
+         case 'arrow':
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.lineTo(x, y);
+            ctx.stroke();
+            break;
+      }
+      ctx.setLineDash([]);
+   }
+}
+
+function handleMouseUp(e) {
+   if (isDrawing) {
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+        
+      const width = x - startX;
+      const height = y - startY;
+        
+      if (currentTool === 'text') {
+         const text = prompt('Enter text:');
+         if (text) {
+            shapes.push(new Shape('text', startX, startY, 0, 0, text));
+         }
+      } else if (currentTool === 'line' || currentTool === 'arrow') {
+         const shape = new Shape(currentTool, 0, 0, 0, 0);
+         shape.startX = startX;
+         shape.startY = startY;
+         shape.endX = x;
+         shape.endY = y;
+         shapes.push(shape);
+      } else if (Math.abs(width) > 5 && Math.abs(height) > 5) {
+         shapes.push(new Shape(currentTool, 
+            Math.min(startX, x), 
+            Math.min(startY, y), 
+            Math.abs(width), 
+            Math.abs(height)));
+      }
+        
+      isDrawing = false;
+      redraw();
+   }
+   isDragging = false;
+}
+
+function redraw() {
+   if (!ctx) return;
+   ctx.clearRect(0, 0, canvas.width, canvas.height);
+   shapes.forEach(shape => shape.draw());
+}
