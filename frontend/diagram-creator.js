@@ -274,3 +274,91 @@ function redraw() {
    ctx.clearRect(0, 0, canvas.width, canvas.height);
    shapes.forEach(shape => shape.draw());
 }
+
+function updatePropertyEditor() {
+   const editorContent = document.getElementById('propertyEditorContent');
+   if (!editorContent) return;
+    
+   if (!selectedShape) {
+      editorContent.innerHTML = '<p class="text-muted"><small>Select a shape to edit its properties</small></p>';
+      return;
+   }
+    
+   let html = `
+      <div class="mb-3">
+         <label class="form-label"><strong>Shape Type:</strong> ${selectedShape.type}</label>
+      </div>
+   `;
+    
+   if (selectedShape.type !== 'line' && selectedShape.type !== 'arrow') {
+      html += `
+         <div class="mb-3">
+            <label for="shapeLabel" class="form-label">Label</label>
+            <input type="text" class="form-control form-control-sm" id="shapeLabel" value="${selectedShape.text || ''}" onchange="updateShapeProperty('text', this.value)">
+         </div>
+      `;
+   }
+    
+   if (selectedShape.type !== 'text') {
+      html += `
+         <div class="mb-3">
+            <label for="strokeColor" class="form-label">Border Color</label>
+            <input type="color" class="form-control form-control-color" id="strokeColor" value="${selectedShape.strokeColor}" onchange="updateShapeProperty('strokeColor', this.value)">
+         </div>
+         <div class="mb-3">
+            <label for="lineWidth" class="form-label">Border Width: <span id="lineWidthValue">${selectedShape.lineWidth}</span></label>
+            <input type="range" class="form-range" id="lineWidth" min="1" max="10" value="${selectedShape.lineWidth}" oninput="document.getElementById('lineWidthValue').textContent=this.value" onchange="updateShapeProperty('lineWidth', parseInt(this.value))">
+         </div>
+      `;
+   }
+    
+   if (selectedShape.type === 'circle' || selectedShape.type === 'rectangle') {
+      html += `
+         <div class="mb-3">
+            <label for="fillColor" class="form-label">Fill Color</label>
+            <input type="color" class="form-control form-control-color" id="fillColor" value="${selectedShape.fillColor}" onchange="updateShapeProperty('fillColor', this.value)">
+         </div>
+      `;
+   }
+    
+   html += `
+      <button class="btn btn-danger btn-sm w-100" onclick="deleteSelectedShape()">Delete Shape</button>
+   `;
+    
+   editorContent.innerHTML = html;
+}
+
+function updateShapeProperty(property, value) {
+   if (selectedShape) {
+      selectedShape[property] = value;
+      redraw();
+   }
+}
+
+function deleteSelectedShape() {
+   if (selectedShape) {
+      shapes = shapes.filter(s => s !== selectedShape);
+      selectedShape = null;
+      updatePropertyEditor();
+      redraw();
+    }
+}
+
+function clearCanvas() {
+   if (confirm('Are you sure you want to clear the canvas?')) {
+      shapes = [];
+      selectedShape = null;
+      updatePropertyEditor();
+      redraw();
+   }
+}
+
+// Handle delete key
+document.addEventListener('keydown', (e) => {
+   if (e.key === 'Backspace' && selectedShape) {
+      shapes = shapes.filter(s => s !== selectedShape);
+      selectedShape = null;
+      updatePropertyEditor();
+      redraw();
+   }
+});
