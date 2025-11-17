@@ -85,7 +85,60 @@ class Shape {
          ctx.fillText(this.text, this.x + this.width/2, this.y + this.height/2);
       }
    }
+   
+   drawArrow() {
+      const headLength = 15;
+      const angle = Math.atan2(this.endY - this.startY, this.endX - this.startX);
+         
+      ctx.beginPath();
+      ctx.moveTo(this.startX, this.startY);
+      ctx.lineTo(this.endX, this.endY);
+      ctx.stroke();
+         
+      ctx.beginPath();
+      ctx.moveTo(this.endX, this.endY);
+      ctx.lineTo(this.endX - headLength * Math.cos(angle - Math.PI / 6),
+                  this.endY - headLength * Math.sin(angle - Math.PI / 6));
+      ctx.lineTo(this.endX - headLength * Math.cos(angle + Math.PI / 6),
+                  this.endY - headLength * Math.sin(angle + Math.PI / 6));
+      ctx.closePath();
+      ctx.fillStyle = this.strokeColor;
+      ctx.fill();
+      }
+    
+   contains(x, y) {
+      if (this.type === 'line' || this.type === 'arrow') {
+         const distance = this.pointToLineDistance(x, y);
+         return distance < 5;
+      } else if (this.type === 'circle') {
+         const radius = Math.min(this.width, this.height) / 2;
+         const dx = x - (this.x + this.width/2);
+         const dy = y - (this.y + this.height/2);
+         return Math.sqrt(dx*dx + dy*dy) <= radius;
+      } else if (this.type === 'text') {
+         ctx.font = '16px Arial';
+         const metrics = ctx.measureText(this.text);
+         return x >= this.x && x <= this.x + metrics.width && 
+                  y >= this.y - 16 && y <= this.y + 4;
+      } else {
+         return x >= this.x && x <= this.x + this.width &&
+                  y >= this.y && y <= this.y + this.height;
+      }
+   }
+    
+   pointToLineDistance(px, py) {
+      const dx = this.endX - this.startX;
+      const dy = this.endY - this.startY;
+      const length = Math.sqrt(dx*dx + dy*dy);
+      if (length === 0) return Math.sqrt((px-this.startX)**2 + (py-this.startY)**2);
+        
+      const t = Math.max(0, Math.min(1, ((px - this.startX) * dx + (py - this.startY) * dy) / (length * length)));
+      const projX = this.startX + t * dx;
+      const projY = this.startY + t * dy;
+      return Math.sqrt((px - projX)**2 + (py - projY)**2);
+   }
 }
+
 
 // Tool button handlers
 document.querySelectorAll('.tool-button').forEach(button => {
