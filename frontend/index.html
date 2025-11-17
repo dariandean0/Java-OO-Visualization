@@ -13,6 +13,56 @@
                 width: 100%;
                 height: 100%;
             }
+            
+            /* Diagram Creator Styles */
+            #diagramCanvas {
+                border: 1px solid #ccc;
+                background-color: white;
+                cursor: crosshair;
+                display: block;
+            }
+            
+            .tool-button {
+                width: 60px;
+                height: 60px;
+                margin: 5px;
+                border: 2px solid #dee2e6;
+                background-color: white;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: all 0.2s;
+                border-radius: 4px;
+            }
+            
+            .tool-button:hover {
+                background-color: #e9ecef;
+                border-color: #0d6efd;
+            }
+            
+            .tool-button.active {
+                background-color: #0d6efd;
+                border-color: #0d6efd;
+                color: white;
+            }
+            
+            .left-toolbar {
+                background-color: #f8f9fa;
+                padding: 10px;
+                border-right: 2px solid #dee2e6;
+                height: 94vh;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .canvas-container {
+                overflow: auto;
+                height: 94vh;
+                background-color: #e9ecef;
+            }
+
             .page { display: none; }
             .pactive { display: block; }
         </style>
