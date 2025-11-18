@@ -64,19 +64,43 @@
             }
             
             .right-panel {
-               height: 94vh;
-               display: flex;
-               flex-direction: column;
-               background-color: #f8f9fa;
-               border-left: 2px solid #dee2e6;
+                height: 94vh;
+                display: flex;
+                flex-direction: column;
+                background-color: #f8f9fa;
+                border-left: 2px solid #dee2e6;
             }
             
             .property-editor {
-               padding: 15px;
-               border-bottom: 2px solid #dee2e6;
-               flex: 0 0 auto;
-               max-height: 50%;
-               overflow-y: auto;
+                padding: 15px;
+                border-bottom: 2px solid #dee2e6;
+                flex: 0 0 auto;
+                max-height: 50%;
+                overflow-y: auto;
+            }
+
+            .dot-preview {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                min-height: 0;
+            }
+            
+            .dot-preview-header {
+                padding: 10px 15px;
+                background-color: #e9ecef;
+                border-bottom: 1px solid #dee2e6;
+                font-weight: bold;
+            }
+            
+            .dot-preview-content {
+                flex: 1;
+                overflow-y: auto;
+                padding: 15px;
+                background-color: #fff;
+                font-family: 'Courier New', monospace;
+                font-size: 13px;
+                white-space: pre;
             }
 
             .page { display: none; }
@@ -277,7 +301,7 @@
                     <div class="col canvas-container">
                         <canvas id="diagramCanvas" width="2000" height="2000"></canvas>
                     </div>
-                                        <!-- Right Panel -->
+                    <!-- Right Panel -->
                     <div class="col-3 right-panel">
                         <!-- Property Editor -->
                         <div class="property-editor">
@@ -286,8 +310,20 @@
                                 <p class="text-muted"><small>Select a shape to edit its properties</small></p>
                             </div>
                         </div>
-
+                        <!-- DOT Preview -->
+                        <div class="dot-preview">
+                            <div class="dot-preview-header">DOT Preview</div>
+                            <div class="dot-preview-content" id="dotPreview">digraph G {
+    node [shape=record];
+    rankdir=TB;
+}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
+        
         <div id="Comparer" class="page">
             <h1>Diagram Comparer</h1>
         </div>
