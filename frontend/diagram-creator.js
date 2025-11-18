@@ -420,6 +420,61 @@ function updateDOTPreview() {
     previewDiv.textContent = dot;
 }
 
+function exportToDOT() {
+   let dot = 'digraph G {\n';
+   dot += '  node [shape=record];\n';
+   dot += '  rankdir=TB;\n\n';
+      
+   const nodes = shapes.filter(s => s.type === 'circle' || s.type === 'rectangle');
+   const edges = shapes.filter(s => s.type === 'arrow' || s.type === 'line');
+      
+   // Export nodes
+   nodes.forEach(shape => {
+      const label = shape.text || `node${shape.id}`;
+      const shapeType = shape.type === 'circle' ? 'ellipse' : 'box';
+      const fillColor = shape.fillColor.replace('#', '');
+      const strokeColor = shape.strokeColor.replace('#', '');
+      dot += `  node${shape.id} [label="${label}", shape=${shapeType}, style=filled, fillcolor="#${fillColor}", color="#${strokeColor}", penwidth=${shape.lineWidth}];\n`;
+   });
+      
+   dot += '\n';
+      
+   // Export edges (basic implementation - connects nodes based on proximity)
+   edges.forEach(edge => {
+      let fromNode = null;
+      let toNode = null;
+         
+      nodes.forEach(node => {
+         const centerX = node.x + node.width / 2;
+         const centerY = node.y + node.height / 2;
+            
+         const distStart = Math.sqrt((edge.startX - centerX)**2 + (edge.startY - centerY)**2);
+         const distEnd = Math.sqrt((edge.endX - centerX)**2 + (edge.endY - centerY)**2);
+            
+         if (distStart < 50 && !fromNode) fromNode = node;
+         if (distEnd < 50 && !toNode) toNode = node;
+      });
+         
+      if (fromNode && toNode) {
+         const edgeOp = edge.type === 'arrow' ? '->' : '--';
+         const strokeColor = edge.strokeColor.replace('#', '');
+         dot += `  node${fromNode.id} ${edgeOp} node${toNode.id} [color="#${strokeColor}", penwidth=${edge.lineWidth}];\n`;
+      }
+   });
+      
+   dot += '}\n';
+      
+   // Download DOT file
+   const blob = new Blob([dot], { type: 'text/plain' });
+   const url = URL.createObjectURL(blob);
+   const a = document.createElement('a');
+   a.href = url;
+   a.download = 'diagram.dot';
+   a.click();
+   URL.revokeObjectURL(url);
+      
+   console.log('Exported DOT:\n', dot);
+}
 
 // Handle delete key
 document.addEventListener('keydown', (e) => {
