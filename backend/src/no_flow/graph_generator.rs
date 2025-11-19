@@ -78,7 +78,7 @@ impl GraphGenerator {
         dot
     }
 
-    fn generate_class_subgraph(&self, class: &JavaClass, analysis: &AnalysisResult) -> String {
+    fn generate_class_subgraph(&self, class: &JavaClass, _analysis: &AnalysisResult) -> String {
         let mut subgraph = String::new();
         let safe_class_name = class.name.replace('.', "_");
 
@@ -198,15 +198,7 @@ impl GraphGenerator {
         )
     }
 
-    fn generate_constructor_node(&self, constructor: &JavaMethod, class_name: &str) -> String {
-        let constructor_id = format!("{}_constructor", class_name);
-        let label = self.format_constructor(constructor);
 
-        format!(
-            "        \"{}\" [label=\"{}\", shape=house, style=filled, fillcolor=lightcyan];\n",
-            constructor_id, label
-        )
-    }
 
     fn generate_internal_connections(&self, class: &JavaClass, class_name: &str) -> String {
         let mut connections = String::new();
@@ -353,6 +345,7 @@ impl GraphGenerator {
         )
     }
 
+    #[allow(dead_code)]
     fn format_constructor(&self, constructor: &JavaMethod) -> String {
         let visibility = if constructor.visibility == "package" {
             ""
@@ -380,6 +373,7 @@ impl GraphGenerator {
         format!("{}{}", visibility, params)
     }
 
+    #[allow(dead_code)]
     fn escape_label(&self, label: &str) -> String {
         label.replace('"', "\\\"")
     }

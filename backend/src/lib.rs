@@ -68,19 +68,16 @@ pub fn wasm_visualize_java_code(java_code: &str) -> String {
 //emscripten compatible exports
 use std::ffi::CString;
 use std::os::raw::c_char;
-use std::slice;
 use std::str;
 
-fn ptr_to_str<'a>(ptr: *const u8, len: usize) -> &'a str {
-    let bytes = unsafe { slice::from_raw_parts(ptr, len) };
-    str::from_utf8(bytes).unwrap_or("")
-}
+
 fn to_c_string(s: String) -> *mut c_char {
     CString::new(s).unwrap().into_raw()
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn wasm_execution_flow_gen(ptr: *const c_char) -> *mut c_char {
+#[allow(clippy::missing_safety_doc)]
+pub unsafe extern "C" fn wasm_execution_flow_gen(ptr: *const c_char) -> *mut c_char {
     let c_str = unsafe { std::ffi::CStr::from_ptr(ptr) };
     let java_code = c_str.to_str().unwrap_or("");
     let vec = execution_flow_gen(java_code);
@@ -89,7 +86,8 @@ pub extern "C" fn wasm_execution_flow_gen(ptr: *const c_char) -> *mut c_char {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn wasm_no_flow_gen(ptr: *const c_char) -> *mut c_char {
+#[allow(clippy::missing_safety_doc)]
+pub unsafe extern "C" fn wasm_no_flow_gen(ptr: *const c_char) -> *mut c_char {
     let c_str = unsafe { std::ffi::CStr::from_ptr(ptr) };
     let java_code = c_str.to_str().unwrap_or("");
     let result = no_flow_gen(java_code);
@@ -97,7 +95,8 @@ pub extern "C" fn wasm_no_flow_gen(ptr: *const c_char) -> *mut c_char {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn wasm_visualize_java_code(ptr: *const c_char) -> *mut c_char {
+#[allow(clippy::missing_safety_doc)]
+pub unsafe extern "C" fn wasm_visualize_java_code(ptr: *const c_char) -> *mut c_char {
     //let java_code = ptr_to_str(ptr, len);
 
     let c_str = unsafe { std::ffi::CStr::from_ptr(ptr) };

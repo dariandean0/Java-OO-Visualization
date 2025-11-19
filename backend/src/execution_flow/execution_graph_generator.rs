@@ -259,21 +259,19 @@ impl ExecutionGraphGenerator {
         // Connect method calls to objects
         for step in steps {
             if let ExecutionAction::MethodCall {
-                caller,
+                caller: Some(caller_name),
                 method_name,
                 ..
             } = &step.action
             {
-                if let Some(caller_name) = caller {
-                    let obj_id = format!("obj_{}", self.sanitize_name(caller_name));
-                    let step_id = format!("step_{}", step.step_number);
-                    connections.push_str(&format!(
-                        "    {} -> {} [label=\"{}\", color=blue, style=dashed];\n",
-                        obj_id,
-                        step_id,
-                        self.escape_label(method_name)
-                    ));
-                }
+                let obj_id = format!("obj_{}", self.sanitize_name(caller_name));
+                let step_id = format!("step_{}", step.step_number);
+                connections.push_str(&format!(
+                    "    {} -> {} [label=\"{}\", color=blue, style=dashed];\n",
+                    obj_id,
+                    step_id,
+                    self.escape_label(method_name)
+                ));
             }
         }
 
@@ -380,6 +378,7 @@ impl ExecutionGraphGenerator {
         name.replace([' ', '.', '<', '>', '[', ']', '(', ')', '-', '+'], "_")
     }
 
+    #[allow(dead_code)]
     fn escape_label(&self, text: &str) -> String {
         text.replace('\"', "\\\"")
             .replace('{', "\\{")

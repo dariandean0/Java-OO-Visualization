@@ -110,13 +110,12 @@ impl ExecutionAnalyzer {
     fn find_main_method<'a>(&self, root_node: &Node<'a>, source: &str) -> Option<Node<'a>> {
         let mut main_method = None;
 
-        self.find_main_recursive(root_node, source, &mut main_method);
+        Self::find_main_recursive(root_node, source, &mut main_method);
 
         main_method
     }
 
     fn find_main_recursive<'a>(
-        &self,
         node: &Node<'a>,
         source: &str,
         main_method: &mut Option<Node<'a>>,
@@ -132,7 +131,7 @@ impl ExecutionAnalyzer {
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             if main_method.is_none() {
-                self.find_main_recursive(&child, source, main_method);
+                Self::find_main_recursive(&child, source, main_method);
             }
         }
     }

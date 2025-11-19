@@ -154,11 +154,10 @@ impl JavaAnalyzer {
                 }
 
                 // Process method invocations within this method
-                if self.current_class_name.is_some() {
-                    if let Some(block_node) = node.child_by_field_name("body") {
+                if self.current_class_name.is_some()
+                    && let Some(block_node) = node.child_by_field_name("body") {
                         self.process_method_calls_in_block(&block_node, source);
                     }
-                }
 
                 self.current_method = None;
             }
@@ -176,19 +175,7 @@ impl JavaAnalyzer {
         }
     }
 
-    fn process_node(&mut self, node: &Node, source: &str) {
-        match node.kind() {
-            "class_declaration" => self.process_class_declaration(node, source),
-            "interface_declaration" => self.process_interface_declaration(node, source),
-            "field_declaration" => self.process_field_declaration(node, source),
-            "method_declaration" => self.process_method_declaration(node, source),
-            "constructor_declaration" => self.process_constructor_declaration(node, source),
-            // Remove method_invocation from here to avoid duplicate processing
-            "local_variable_declaration" => self.process_local_variable_declaration(node, source),
-            "assignment_expression" => self.process_assignment_expression(node, source),
-            _ => {}
-        }
-    }
+
 
     fn process_class_declaration(&mut self, node: &Node, source: &str) {
         if let Some(current_class) = self.current_class.take() {
@@ -288,11 +275,10 @@ impl JavaAnalyzer {
         let mut method = self.extract_method_without_calls(node, source);
 
         // Interface methods are automatically abstract
-        if let Some(ref class) = self.current_class {
-            if class.is_interface {
+        if let Some(ref class) = self.current_class
+            && class.is_interface {
                 method.is_abstract = true;
             }
-        }
 
         if let Some(ref mut class) = self.current_class {
             class.methods.push(method);
@@ -376,46 +362,7 @@ impl JavaAnalyzer {
         method
     }
 
-    fn extract_method(&mut self, node: &Node, source: &str) -> JavaMethod {
-        let mut method = JavaMethod {
-            name: String::new(),
-            return_type: "void".to_string(),
-            visibility: "package".to_string(),
-            is_static: false,
-            is_abstract: false,
-            parameters: Vec::new(),
-            calls: Vec::new(),
-        };
 
-        let mut cursor = node.walk();
-        for child in node.children(&mut cursor) {
-            match child.kind() {
-                "modifiers" => {
-                    method.visibility = self.extract_visibility(&child, source);
-                    method.is_static = self.has_modifier(&child, source, "static");
-                    method.is_abstract = self.has_modifier(&child, source, "abstract");
-                }
-                "type" => {
-                    method.return_type = self.extract_type(&child, source);
-                }
-                "identifier" => {
-                    method.name = node_text(&child, source).to_string();
-                }
-                "formal_parameters" => {
-                    method.parameters = self.extract_parameters(&child, source);
-                }
-                "block" => {
-                    // Process method invocations within this method while we have the context
-                    method.calls = self.extract_method_calls_from_block(&child, source);
-                    // Also process any method invocations directly for relationships
-                    self.process_method_calls_in_block(&child, source);
-                }
-                _ => {}
-            }
-        }
-
-        method
-    }
 
     fn extract_constructor(&self, node: &Node, source: &str) -> JavaMethod {
         let mut constructor = JavaMethod {
@@ -702,21 +649,7 @@ impl JavaAnalyzer {
         None
     }
 
-    fn extract_method_calls_from_block(&self, block_node: &Node, source: &str) -> Vec<MethodCall> {
-        let mut calls = Vec::new();
 
-        let mut cursor = block_node.walk();
-        for child in block_node.children(&mut cursor) {
-            if child.kind() == "expression_statement"
-                && let Some(expr) = child.child(0)
-                && expr.kind() == "method_invocation"
-            {
-                calls.push(self.extract_enhanced_method_call(&expr, source));
-            }
-        }
-
-        calls
-    }
 
     fn process_method_calls_in_block(&mut self, block_node: &Node, source: &str) {
         let mut cursor = block_node.walk();
@@ -740,18 +673,17 @@ impl JavaAnalyzer {
         for child in var_decl_node.children(&mut cursor) {
             if child.kind() == "variable_declarator" {
                 // Look for method invocation in the initializer
-                if let Some(value_node) = child.child_by_field_name("value") {
-                    if value_node.kind() == "method_invocation" {
+                if let Some(value_node) = child.child_by_field_name("value")
+                    && value_node.kind() == "method_invocation" {
                         self.process_method_invocation(&value_node, source);
                     }
-                }
             }
         }
     }
 
     fn process_method_invocation(&mut self, node: &Node, source: &str) {
         // Track method calls for relationship analysis
-        if let Some(ref class) = self.current_class {
+        if let Some(ref _class) = self.current_class {
             let method_call = self.extract_enhanced_method_call(node, source);
             if !method_call.method_name.is_empty() {
                 // Create method-to-method relationship
