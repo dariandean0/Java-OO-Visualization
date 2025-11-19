@@ -4,6 +4,9 @@ pub mod no_flow;
 pub mod parser;
 pub mod visualizer;
 
+#[cfg(test)]
+mod tests;
+
 use analyzer::JavaAnalyzer;
 use no_flow::GraphGenerator;
 use parser::JavaParser;

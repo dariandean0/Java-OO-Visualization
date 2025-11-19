@@ -389,12 +389,12 @@ impl ExecutionGraphGenerator {
 }
 
 #[cfg(test)]
-mod tests {
+mod generator_tests {
     use super::super::execution_analyzer::{ExecutionAction, ExecutionStep};
     use super::*;
 
     #[test]
-    fn test_execution_graph_generation() {
+    fn execution_graph_generation() {
         let steps = vec![ExecutionStep {
             step_number: 1,
             line_number: 3,

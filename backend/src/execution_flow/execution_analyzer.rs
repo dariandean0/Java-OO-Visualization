@@ -585,7 +585,7 @@ mod tests {
     use crate::parser::JavaParser;
 
     #[test]
-    fn test_execution_flow_analysis() {
+    fn execution_flow_analysis() {
         let java_code = r#"
             public class TestExecution {
                 public static void main(String[] args) {

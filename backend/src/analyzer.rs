@@ -285,7 +285,15 @@ impl JavaAnalyzer {
             self.current_method = Some(node_text(&name_node, source).to_string());
         }
 
-        let method = self.extract_method_without_calls(node, source);
+        let mut method = self.extract_method_without_calls(node, source);
+
+        // Interface methods are automatically abstract
+        if let Some(ref class) = self.current_class {
+            if class.is_interface {
+                method.is_abstract = true;
+            }
+        }
+
         if let Some(ref mut class) = self.current_class {
             class.methods.push(method);
         }
@@ -318,8 +326,8 @@ impl JavaAnalyzer {
                     field.is_static = self.has_modifier(&child, source, "static");
                     field.is_final = self.has_modifier(&child, source, "final");
                 }
-                "type" => {
-                    field.field_type = self.extract_type(&child, source);
+                "type" | "integral_type" | "floating_point_type" | "boolean_type" | "void_type" => {
+                    field.field_type = node_text(&child, source).to_string();
                 }
                 "variable_declarator" => {
                     if let Some(identifier) = child.child_by_field_name("name") {
@@ -352,8 +360,8 @@ impl JavaAnalyzer {
                     method.is_static = self.has_modifier(&child, source, "static");
                     method.is_abstract = self.has_modifier(&child, source, "abstract");
                 }
-                "type" => {
-                    method.return_type = self.extract_type(&child, source);
+                "type" | "integral_type" | "floating_point_type" | "boolean_type" | "void_type" => {
+                    method.return_type = node_text(&child, source).to_string();
                 }
                 "identifier" => {
                     method.name = node_text(&child, source).to_string();
@@ -504,7 +512,9 @@ impl JavaAnalyzer {
         let mut cursor = param_node.walk();
         for child in param_node.children(&mut cursor) {
             match child.kind() {
-                "type" => param_type = self.extract_type(&child, source),
+                "type" | "integral_type" | "floating_point_type" | "boolean_type" | "void_type" => {
+                    param_type = node_text(&child, source).to_string();
+                }
                 "identifier" => param_name = node_text(&child, source).to_string(),
                 _ => {}
             }
@@ -711,11 +721,30 @@ impl JavaAnalyzer {
     fn process_method_calls_in_block(&mut self, block_node: &Node, source: &str) {
         let mut cursor = block_node.walk();
         for child in block_node.children(&mut cursor) {
+            // Handle direct method invocations in expression statements
             if child.kind() == "expression_statement"
                 && let Some(expr) = child.child(0)
                 && expr.kind() == "method_invocation"
             {
                 self.process_method_invocation(&expr, source);
+            }
+            // Handle method invocations in local variable declarations
+            else if child.kind() == "local_variable_declaration" {
+                self.process_method_calls_in_local_var_decl(&child, source);
+            }
+        }
+    }
+
+    fn process_method_calls_in_local_var_decl(&mut self, var_decl_node: &Node, source: &str) {
+        let mut cursor = var_decl_node.walk();
+        for child in var_decl_node.children(&mut cursor) {
+            if child.kind() == "variable_declarator" {
+                // Look for method invocation in the initializer
+                if let Some(value_node) = child.child_by_field_name("value") {
+                    if value_node.kind() == "method_invocation" {
+                        self.process_method_invocation(&value_node, source);
+                    }
+                }
             }
         }
     }
@@ -746,32 +775,5 @@ impl JavaAnalyzer {
                 });
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::parser::JavaParser;
-
-    #[test]
-    fn test_implements_extends() {
-        let mut parser = JavaParser::new().unwrap();
-        let code = r#"
-public interface Trainable {}
-
-public abstract class Animal {}
-
-public class Dog extends Animal implements Trainable {}
-"#;
-
-        let tree = parser.parse(code).unwrap();
-        let root = parser.get_root_node(&tree);
-
-        let mut analyzer = JavaAnalyzer::new();
-        let result = analyzer.analyze(&root, code);
-
-        assert_eq!(result.classes[2].implements, vec!["Trainable"]);
-        assert_eq!(result.classes[2].extends, Some("Animal".to_string()));
     }
 }
