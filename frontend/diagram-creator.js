@@ -45,10 +45,10 @@ class Shape {
       if (this.type === 'circle') {
          const radius = Math.min(this.width, this.height) / 2;
          return {
-            north: { x: centerX, y: this.y },
-            south: { x: centerX, y: this.y + this.height },
-            east: { x: this.x + this.width, y: centerY },
-            west: { x: this.x, y: centerY }
+            north: { x: centerX, y: centerY - radius },
+            south: { x: centerX, y: centerY + radius },
+            east: { x: centerX + radius, y: centerY },
+            west: { x: centerX - radius, y: centerY }
          };
       } else {
          return {
