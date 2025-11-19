@@ -31,6 +31,12 @@ impl Default for GraphConfig {
     }
 }
 
+impl Default for GraphGenerator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GraphGenerator {
     pub fn new() -> Self {
         GraphGenerator {
@@ -335,6 +341,8 @@ mod tests {
         let analysis = AnalysisResult {
             classes: vec![class],
             relationships: Vec::new(),
+            object_registry: std::collections::HashMap::new(),
+            type_inference: std::collections::HashMap::new(),
         };
 
         let generator = GraphGenerator::new();

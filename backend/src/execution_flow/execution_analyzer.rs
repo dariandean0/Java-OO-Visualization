@@ -65,6 +65,7 @@ pub struct ExecutionAnalyzer {
     call_graph: HashMap<String, Vec<String>>,
     object_lifecycle: HashMap<String, Vec<usize>>,
     source_lines: Vec<String>,
+    enhanced_object_tracking: bool,
 }
 
 impl ExecutionAnalyzer {
@@ -78,6 +79,7 @@ impl ExecutionAnalyzer {
             call_graph: HashMap::new(),
             object_lifecycle: HashMap::new(),
             source_lines: Vec::new(),
+            enhanced_object_tracking: true,
         }
     }
 
@@ -231,7 +233,7 @@ impl ExecutionAnalyzer {
 
                             self.add_execution_step(
                                 line_number,
-                                &source_line,
+                                source_line,
                                 ExecutionAction::ObjectCreation {
                                     variable_name: variable_name.clone(),
                                     class_name: class_name.clone(),
@@ -244,7 +246,7 @@ impl ExecutionAnalyzer {
                             let value = node_text(&value_node, source).to_string();
                             self.add_execution_step(
                                 line_number,
-                                &source_line,
+                                source_line,
                                 ExecutionAction::VariableAssignment {
                                     variable_name: variable_name.clone(),
                                     value_type: class_name.clone(),
@@ -311,10 +313,8 @@ impl ExecutionAnalyzer {
             let caller_name = node_text(&object_node, source).to_string();
             caller = Some(caller_name.clone());
 
-            // Try to find the class of the caller
-            if let Some(class_name) = self.active_objects.get(&caller_name) {
-                target_class = class_name.clone();
-            }
+            // Enhanced object class resolution
+            target_class = self.resolve_object_class_enhanced(&caller_name);
         }
 
         // Extract parameters
@@ -332,7 +332,7 @@ impl ExecutionAnalyzer {
 
         self.call_graph
             .entry(caller_method)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(called_method.clone());
 
         // Record object usage
@@ -528,7 +528,7 @@ impl ExecutionAnalyzer {
     fn record_object_creation(&mut self, object_name: &str) {
         self.object_lifecycle
             .entry(object_name.to_string())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(self.current_step);
     }
 
@@ -544,6 +544,37 @@ impl ExecutionAnalyzer {
         } else {
             String::new()
         }
+    }
+
+    fn resolve_object_class_enhanced(&self, object_name: &str) -> String {
+        // First check active objects (runtime)
+        if let Some(class_name) = self.active_objects.get(object_name) {
+            return class_name.clone();
+        }
+
+        if self.enhanced_object_tracking {
+            // Check static analysis type inference
+            if let Some(class_name) = self.analysis_result.type_inference.get(object_name) {
+                return class_name.clone();
+            }
+
+            // Check object registry
+            if let Some(object_info) = self.analysis_result.object_registry.get(object_name) {
+                return object_info.class_name.clone();
+            }
+        }
+
+        // Check if it's a static class name (starts with uppercase)
+        if object_name
+            .chars()
+            .next()
+            .map(|c| c.is_uppercase())
+            .unwrap_or(false)
+        {
+            return object_name.to_string();
+        }
+
+        "unknown".to_string()
     }
 }
 
@@ -684,7 +715,7 @@ mod tests {
                     action: ExecutionAction::MethodCall {
                         caller: Some("System.out".into()),
                         method_name: "println".into(),
-                        target_class: "unknown".into(),
+                        target_class: "System.out".into(),
                         parameters: vec!["result".into()]
                     },
                     call_stack: vec!["main".into()],

@@ -46,6 +46,12 @@ pub struct ExecutionGraphGenerator {
     config: ExecutionGraphConfig,
 }
 
+impl Default for ExecutionGraphGenerator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ExecutionGraphGenerator {
     pub fn new() -> Self {
         ExecutionGraphGenerator {
@@ -76,11 +82,10 @@ impl ExecutionGraphGenerator {
             });
 
             // If we have a max steps limit, keep only recent steps for next iteration
-            if let Some(max_steps) = self.config.max_steps_per_graph {
-                if cumulative_steps.len() > max_steps {
+            if let Some(max_steps) = self.config.max_steps_per_graph
+                && cumulative_steps.len() > max_steps {
                     cumulative_steps = cumulative_steps.into_iter().skip(1).collect();
                 }
-            }
         }
 
         graphs
@@ -105,7 +110,7 @@ impl ExecutionGraphGenerator {
 
         // Create call stack visualization
         if self.config.show_call_stack && !steps.is_empty() {
-            dot.push_str(&self.generate_call_stack_subgraph(&steps.last().unwrap()));
+            dot.push_str(&self.generate_call_stack_subgraph(steps.last().unwrap()));
         }
 
         // Create object state visualization
@@ -252,24 +257,21 @@ impl ExecutionGraphGenerator {
 
         // Connect method calls to objects
         for step in steps {
-            match &step.action {
-                ExecutionAction::MethodCall {
+            if let ExecutionAction::MethodCall {
                     caller,
                     method_name,
                     ..
-                } => {
-                    if let Some(caller_name) = caller {
-                        let obj_id = format!("obj_{}", self.sanitize_name(caller_name));
-                        let step_id = format!("step_{}", step.step_number);
-                        connections.push_str(&format!(
-                            "    {} -> {} [label=\"{}\", color=blue, style=dashed];\n",
-                            obj_id,
-                            step_id,
-                            self.escape_label(method_name)
-                        ));
-                    }
+                } = &step.action {
+                if let Some(caller_name) = caller {
+                    let obj_id = format!("obj_{}", self.sanitize_name(caller_name));
+                    let step_id = format!("step_{}", step.step_number);
+                    connections.push_str(&format!(
+                        "    {} -> {} [label=\"{}\", color=blue, style=dashed];\n",
+                        obj_id,
+                        step_id,
+                        self.escape_label(method_name)
+                    ));
                 }
-                _ => {}
             }
         }
 
