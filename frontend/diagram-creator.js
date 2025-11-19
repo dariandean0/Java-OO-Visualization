@@ -27,6 +27,7 @@ class Shape {
       this.strokeColor = '#000000';
       this.fillColor = '#ffffff';
       this.lineWidth = 2;
+      this.lineStyle = 'solid'; // 'solid' or 'dashed'
       // For connectors (line/arrow)
       this.startNode = null;
       this.startPoint = null; // 'north', 'south', 'east', 'west'
@@ -173,10 +174,19 @@ class Shape {
          endY = this.y + this.height;
       }
       
+      // Apply line style
+      if (this.lineStyle === 'dashed') {
+         ctx.setLineDash([8, 4]);
+      } else {
+         ctx.setLineDash([]);
+      }
+      
       ctx.beginPath();
       ctx.moveTo(startX, startY);
       ctx.lineTo(endX, endY);
       ctx.stroke();
+      
+      ctx.setLineDash([]);
    }
    
    drawArrow() {
@@ -202,11 +212,20 @@ class Shape {
       
       const headLength = 15;
       const angle = Math.atan2(endY - startY, endX - startX);
+      
+      // Apply line style
+      if (this.lineStyle === 'dashed') {
+         ctx.setLineDash([8, 4]);
+      } else {
+         ctx.setLineDash([]);
+      }
          
       ctx.beginPath();
       ctx.moveTo(startX, startY);
       ctx.lineTo(endX, endY);
       ctx.stroke();
+      
+      ctx.setLineDash([]);
          
       ctx.beginPath();
       ctx.moveTo(endX, endY);
@@ -532,6 +551,19 @@ function updatePropertyEditor() {
             <input type="range" class="form-range" id="lineWidth" min="1" max="10" value="${selectedShape.lineWidth}" oninput="document.getElementById('lineWidthValue').textContent=this.value" onchange="updateShapeProperty('lineWidth', parseInt(this.value))">
          </div>
       `;
+      
+      // Add line style for lines and arrows
+      if (selectedShape.type === 'line' || selectedShape.type === 'arrow') {
+         html += `
+            <div class="mb-3">
+               <label for="lineStyle" class="form-label">Line Style</label>
+               <select class="form-select form-select-sm" id="lineStyle" onchange="updateShapeProperty('lineStyle', this.value)">
+                  <option value="solid" ${selectedShape.lineStyle === 'solid' ? 'selected' : ''}>Solid</option>
+                  <option value="dashed" ${selectedShape.lineStyle === 'dashed' ? 'selected' : ''}>Dashed</option>
+               </select>
+            </div>
+         `;
+      }
    }
     
    if (selectedShape.type === 'circle' || selectedShape.type === 'rectangle') {
@@ -605,7 +637,8 @@ function updateDOTPreview() {
         if (edge.startNode && edge.endNode) {
             const edgeOp = edge.type === 'arrow' ? '->' : '--';
             const strokeColor = edge.strokeColor.replace('#', '');
-            dot += `  node${edge.startNode.id} ${edgeOp} node${edge.endNode.id} [color="#${strokeColor}", penwidth=${edge.lineWidth}];\n`;
+            const styleAttr = edge.lineStyle === 'dashed' ? ', style=dashed' : '';
+            dot += `  node${edge.startNode.id} ${edgeOp} node${edge.endNode.id} [color="#${strokeColor}", penwidth=${edge.lineWidth}${styleAttr}];\n`;
         }
     });
     
@@ -638,7 +671,8 @@ function exportToDOT() {
       if (edge.startNode && edge.endNode) {
          const edgeOp = edge.type === 'arrow' ? '->' : '--';
          const strokeColor = edge.strokeColor.replace('#', '');
-         dot += `  node${edge.startNode.id} ${edgeOp} node${edge.endNode.id} [color="#${strokeColor}", penwidth=${edge.lineWidth}];\n`;
+         const styleAttr = edge.lineStyle === 'dashed' ? ', style=dashed' : '';
+         dot += `  node${edge.startNode.id} ${edgeOp} node${edge.endNode.id} [color="#${strokeColor}", penwidth=${edge.lineWidth}${styleAttr}];\n`;
       }
    });
       
