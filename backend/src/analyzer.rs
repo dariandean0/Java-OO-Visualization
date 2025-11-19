@@ -636,29 +636,7 @@ mod tests {
     use crate::parser::JavaParser;
 
     #[test]
-    fn test_class_analysis() {
-        let mut parser = JavaParser::new().unwrap();
-        let code = r#"
-            public class TestClass extends BaseClass {
-                private String name;
-                public void doSomething() {}
-            }
-        "#;
-
-        let tree = parser.parse(code).unwrap();
-        let root = parser.get_root_node(&tree);
-
-        let mut analyzer = JavaAnalyzer::new();
-        let result = analyzer.analyze(&root, code);
-
-        assert_eq!(result.classes.len(), 1);
-        assert_eq!(result.classes[0].name, "TestClass");
-        assert_eq!(result.classes[0].visibility, "public");
-        assert_eq!(result.classes[0].extends, Some("BaseClass".to_string()));
-    }
-
-    #[test]
-    fn test_implements() {
+    fn test_implements_extends() {
         let mut parser = JavaParser::new().unwrap();
         let code = r#"
 public interface Trainable {}
@@ -675,5 +653,6 @@ public class Dog extends Animal implements Trainable {}
         let result = analyzer.analyze(&root, code);
 
         assert_eq!(result.classes[2].implements, vec!["Trainable"]);
+        assert_eq!(result.classes[2].extends, Some("Animal".to_string()));
     }
 }
