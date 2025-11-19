@@ -13,6 +13,96 @@
                 width: 100%;
                 height: 100%;
             }
+            
+            /* Diagram Creator Styles */
+            #diagramCanvas {
+                border: 1px solid #ccc;
+                background-color: white;
+                cursor: crosshair;
+                display: block;
+            }
+            
+            .tool-button {
+                width: 60px;
+                height: 60px;
+                margin: 5px;
+                border: 2px solid #dee2e6;
+                background-color: white;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: all 0.2s;
+                border-radius: 4px;
+            }
+            
+            .tool-button:hover {
+                background-color: #e9ecef;
+                border-color: #0d6efd;
+            }
+            
+            .tool-button.active {
+                background-color: #0d6efd;
+                border-color: #0d6efd;
+                color: white;
+            }
+            
+            .left-toolbar {
+                background-color: #f8f9fa;
+                padding: 10px;
+                border-right: 2px solid #dee2e6;
+                height: 94vh;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .canvas-container {
+                overflow: auto;
+                height: 94vh;
+                background-color: #e9ecef;
+            }
+            
+            .right-panel {
+                height: 94vh;
+                display: flex;
+                flex-direction: column;
+                background-color: #f8f9fa;
+                border-left: 2px solid #dee2e6;
+            }
+            
+            .property-editor {
+                padding: 15px;
+                border-bottom: 2px solid #dee2e6;
+                flex: 0 0 auto;
+                max-height: 50%;
+                overflow-y: auto;
+            }
+
+            .dot-preview {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                min-height: 0;
+            }
+            
+            .dot-preview-header {
+                padding: 10px 15px;
+                background-color: #e9ecef;
+                border-bottom: 1px solid #dee2e6;
+                font-weight: bold;
+            }
+            
+            .dot-preview-content {
+                flex: 1;
+                overflow-y: auto;
+                padding: 15px;
+                background-color: #fff;
+                font-family: 'Courier New', monospace;
+                font-size: 13px;
+                white-space: pre;
+            }
+
             .page { display: none; }
             .pactive { display: block; }
         </style>
@@ -153,11 +243,94 @@
             </div>
         </div>
         <div id="Creator" class="page">
-            <h1>Diagram Creator</h1>
+            <div class="container-fluid p-0">
+                <div class="row g-0">
+                    <!-- Left Toolbar -->
+                    <div class="col-auto left-toolbar">
+                        <div class="d-flex flex-column">
+                            <button class="tool-button active" data-tool="select" title="Select">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M3 3l7.5 18 3-7 7-3L3 3z"/>
+                                </svg>
+                            </button>
+                            <button class="tool-button" data-tool="circle" title="Circle">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="9"/>
+                                </svg>
+                            </button>
+                            <button class="tool-button" data-tool="rectangle" title="Rectangle">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="3" y="5" width="18" height="14" rx="2"/>
+                                </svg>
+                            </button>
+                            <button class="tool-button" data-tool="line" title="Line">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="5" y1="19" x2="19" y2="5"/>
+                                </svg>
+                            </button>
+                            <button class="tool-button" data-tool="arrow" title="Arrow">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="5" y1="12" x2="19" y2="12"/>
+                                    <polyline points="12,5 19,12 12,19"/>
+                                </svg>
+                            </button>
+                            <button class="tool-button" data-tool="text" title="Text">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M5 4v3h5.5v12h3V7H19V4z"/>
+                                </svg>
+                            </button>
+                            <div class="mt-4 d-flex flex-column gap-2">
+                                <button class="btn btn-sm btn-danger" onclick="clearCanvas()" title="Clear Canvas">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                                    </svg>
+                                </button>
+                                <button class="btn btn-sm btn-success" onclick="exportToDOT()" title="Export to DOT">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                        <polyline points="7 10 12 15 17 10"></polyline>
+                                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Center Canvas -->
+                    <div class="col canvas-container">
+                        <canvas id="diagramCanvas" width="2000" height="2000"></canvas>
+                    </div>
+                    <!-- Right Panel -->
+                    <div class="col-3 right-panel">
+                        <!-- Property Editor -->
+                        <div class="property-editor">
+                            <h6 class="mb-3">Node Properties</h6>
+                            <div id="propertyEditorContent">
+                                <p class="text-muted"><small>Select a shape to edit its properties</small></p>
+                            </div>
+                        </div>
+                        <!-- DOT Preview -->
+                        <div class="dot-preview">
+                            <div class="dot-preview-header">DOT Preview</div>
+                            <div class="dot-preview-content" id="dotPreview">digraph G {
+    node [shape=record];
+    rankdir=TB;
+}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
+        
         <div id="Comparer" class="page">
             <h1>Diagram Comparer</h1>
         </div>
+        
+        <!--Diagram Creator Script-->
+        <script src="diagram-creator.js"></script>
+        
         <!--Bootstrap-->
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
     </body>

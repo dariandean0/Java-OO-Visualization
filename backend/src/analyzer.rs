@@ -216,11 +216,11 @@ impl JavaAnalyzer {
     fn process_method_invocation(&mut self, node: &Node, source: &str) {
         // Track method calls for relationship analysis
         if let Some(ref class) = self.current_class {
-            let method_name = self.extract_method_call(node, source);
+            let (to_class, method_name) = self.extract_method_call(node, source);
             if !method_name.is_empty() {
                 self.relationships.push(Relationship {
                     from: class.name.clone(),
-                    to: "external".to_string(), // Placeholder
+                    to: to_class,
                     relationship_type: RelationshipType::Calls,
                 });
             }
@@ -405,13 +405,32 @@ impl JavaAnalyzer {
         }
     }
 
-    fn extract_method_call(&self, node: &Node, source: &str) -> String {
-        // Simplified method call extraction
-        if let Some(identifier) = node.child_by_field_name("name") {
-            node_text(&identifier, source).to_string()
+    // TODO! currently this method only handles `ClassName.method`,
+    // we should also start keeping track of calling methods from objects
+    fn extract_method_call(&self, node: &Node, source: &str) -> (String, String) {
+        let class = if let Some(object) = node.child_by_field_name("object") {
+            let object_name = node_text(&object, source);
+
+            // Objects start with an uppercase character
+            if object_name
+                .chars()
+                .next()
+                .map(|x| x.is_uppercase())
+                .unwrap_or(false)
+            {
+                object_name
+            } else {
+                "unknown"
+            }
         } else {
-            String::new()
-        }
+            "unknown"
+        };
+
+        let method = node
+            .child_by_field_name("name")
+            .map(|node| node_text(&node, source))
+            .unwrap_or_default();
+        (class.to_string(), method.to_string())
     }
 }
 
