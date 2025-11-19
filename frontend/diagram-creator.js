@@ -663,5 +663,6 @@ document.addEventListener('keydown', (e) => {
       selectedShape = null;
       updatePropertyEditor();
       redraw();
+      updateDOTPreview();
    }
 });
