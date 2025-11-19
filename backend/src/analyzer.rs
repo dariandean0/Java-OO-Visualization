@@ -44,7 +44,8 @@ pub struct JavaParameter {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MethodCall {
-    pub caller_object: Option<String>,
+    pub caller_method: String,
+    pub caller_class: String,
     pub method_name: String,
     pub target_class: String,
     pub is_static_call: bool,
@@ -80,15 +81,17 @@ pub enum RelationshipType {
     Uses,
     Calls,
     Contains,
+    MethodCall, // New type for specific method-to-method calls
 }
 
 pub struct JavaAnalyzer {
     current_class: Option<JavaClass>,
+    current_class_name: Option<String>,
+    current_method: Option<String>,
     classes: Vec<JavaClass>,
     relationships: Vec<Relationship>,
     object_registry: HashMap<String, ObjectInfo>,
     type_inference: HashMap<String, String>,
-    current_method: Option<String>,
 }
 
 impl Default for JavaAnalyzer {
@@ -101,11 +104,12 @@ impl JavaAnalyzer {
     pub fn new() -> Self {
         JavaAnalyzer {
             current_class: None,
+            current_class_name: None,
+            current_method: None,
             classes: Vec::new(),
             relationships: Vec::new(),
             object_registry: HashMap::new(),
             type_inference: HashMap::new(),
-            current_method: None,
         }
     }
 
@@ -115,10 +119,49 @@ impl JavaAnalyzer {
         self.object_registry.clear();
         self.type_inference.clear();
         self.current_class = None;
+        self.current_class_name = None;
         self.current_method = None;
 
+        // First pass: collect all classes, fields, methods, and variable declarations
+        walk_tree(
+            root_node,
+            source,
+            0,
+            &mut |node, source, _depth| match node.kind() {
+                "class_declaration" => self.process_class_declaration(node, source),
+                "interface_declaration" => self.process_interface_declaration(node, source),
+                "field_declaration" => self.process_field_declaration(node, source),
+                "method_declaration" => self.process_method_declaration(node, source),
+                "constructor_declaration" => self.process_constructor_declaration(node, source),
+                "local_variable_declaration" => {
+                    self.process_local_variable_declaration(node, source)
+                }
+                "assignment_expression" => self.process_assignment_expression(node, source),
+                _ => {}
+            },
+        );
+
+        // Second pass: process method invocations now that we have all type information
         walk_tree(root_node, source, 0, &mut |node, source, _depth| {
-            self.process_node(node, source);
+            if node.kind() == "class_declaration" {
+                // Set current class name context for this pass
+                if let Some(identifier_node) = node.child_by_field_name("name") {
+                    self.current_class_name = Some(node_text(&identifier_node, source).to_string());
+                }
+            } else if node.kind() == "method_declaration" {
+                if let Some(name_node) = node.child_by_field_name("name") {
+                    self.current_method = Some(node_text(&name_node, source).to_string());
+                }
+
+                // Process method invocations within this method
+                if self.current_class_name.is_some() {
+                    if let Some(block_node) = node.child_by_field_name("body") {
+                        self.process_method_calls_in_block(&block_node, source);
+                    }
+                }
+
+                self.current_method = None;
+            }
         });
 
         if let Some(class) = self.current_class.take() {
@@ -140,7 +183,7 @@ impl JavaAnalyzer {
             "field_declaration" => self.process_field_declaration(node, source),
             "method_declaration" => self.process_method_declaration(node, source),
             "constructor_declaration" => self.process_constructor_declaration(node, source),
-            "method_invocation" => self.process_method_invocation(node, source),
+            // Remove method_invocation from here to avoid duplicate processing
             "local_variable_declaration" => self.process_local_variable_declaration(node, source),
             "assignment_expression" => self.process_assignment_expression(node, source),
             _ => {}
@@ -242,11 +285,12 @@ impl JavaAnalyzer {
             self.current_method = Some(node_text(&name_node, source).to_string());
         }
 
-        let method = self.extract_method(node, source);
+        let method = self.extract_method_without_calls(node, source);
         if let Some(ref mut class) = self.current_class {
             class.methods.push(method);
         }
 
+        // Reset current_method after processing the method signature
         self.current_method = None;
     }
 
@@ -254,20 +298,6 @@ impl JavaAnalyzer {
         let constructor = self.extract_constructor(node, source);
         if let Some(ref mut class) = self.current_class {
             class.constructors.push(constructor);
-        }
-    }
-
-    fn process_method_invocation(&mut self, node: &Node, source: &str) {
-        // Track method calls for relationship analysis
-        if let Some(ref class) = self.current_class {
-            let method_call = self.extract_enhanced_method_call(node, source);
-            if !method_call.method_name.is_empty() {
-                self.relationships.push(Relationship {
-                    from: class.name.clone(),
-                    to: method_call.target_class.clone(),
-                    relationship_type: RelationshipType::Calls,
-                });
-            }
         }
     }
 
@@ -303,7 +333,42 @@ impl JavaAnalyzer {
         field
     }
 
-    fn extract_method(&self, node: &Node, source: &str) -> JavaMethod {
+    fn extract_method_without_calls(&self, node: &Node, source: &str) -> JavaMethod {
+        let mut method = JavaMethod {
+            name: String::new(),
+            return_type: "void".to_string(),
+            visibility: "package".to_string(),
+            is_static: false,
+            is_abstract: false,
+            parameters: Vec::new(),
+            calls: Vec::new(), // Don't process calls in this pass
+        };
+
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            match child.kind() {
+                "modifiers" => {
+                    method.visibility = self.extract_visibility(&child, source);
+                    method.is_static = self.has_modifier(&child, source, "static");
+                    method.is_abstract = self.has_modifier(&child, source, "abstract");
+                }
+                "type" => {
+                    method.return_type = self.extract_type(&child, source);
+                }
+                "identifier" => {
+                    method.name = node_text(&child, source).to_string();
+                }
+                "formal_parameters" => {
+                    method.parameters = self.extract_parameters(&child, source);
+                }
+                _ => {}
+            }
+        }
+
+        method
+    }
+
+    fn extract_method(&mut self, node: &Node, source: &str) -> JavaMethod {
         let mut method = JavaMethod {
             name: String::new(),
             return_type: "void".to_string(),
@@ -332,7 +397,10 @@ impl JavaAnalyzer {
                     method.parameters = self.extract_parameters(&child, source);
                 }
                 "block" => {
+                    // Process method invocations within this method while we have the context
                     method.calls = self.extract_method_calls_from_block(&child, source);
+                    // Also process any method invocations directly for relationships
+                    self.process_method_calls_in_block(&child, source);
                 }
                 _ => {}
             }
@@ -471,9 +539,10 @@ impl JavaAnalyzer {
                     // Check if this is an object creation
                     if let Some(value_node) = child.child_by_field_name("value")
                         && value_node.kind() == "object_creation_expression"
-                            && let Some(class_node) = value_node.child_by_field_name("type") {
-                                type_name = self.extract_type(&class_node, source);
-                            }
+                        && let Some(class_node) = value_node.child_by_field_name("type")
+                    {
+                        type_name = self.extract_type(&class_node, source);
+                    }
                 }
                 _ => {}
             }
@@ -496,44 +565,52 @@ impl JavaAnalyzer {
 
     fn process_assignment_expression(&mut self, node: &Node, source: &str) {
         if let Some(left) = node.child_by_field_name("left")
-            && let Some(right) = node.child_by_field_name("right") {
-                let variable_name = node_text(&left, source).to_string();
+            && let Some(right) = node.child_by_field_name("right")
+        {
+            let variable_name = node_text(&left, source).to_string();
 
-                // If the right side is an object creation, update type inference
-                if right.kind() == "object_creation_expression" {
-                    if let Some(type_node) = right.child_by_field_name("type") {
-                        let type_name = self.extract_type(&type_node, source);
-                        self.type_inference
-                            .insert(variable_name.clone(), type_name.clone());
+            // If the right side is an object creation, update type inference
+            if right.kind() == "object_creation_expression" {
+                if let Some(type_node) = right.child_by_field_name("type") {
+                    let type_name = self.extract_type(&type_node, source);
+                    self.type_inference
+                        .insert(variable_name.clone(), type_name.clone());
 
-                        let line_number = node.start_position().row + 1;
-                        let object_info = ObjectInfo {
-                            variable_name: variable_name.clone(),
-                            class_name: type_name,
-                            declared_at_line: line_number,
-                            is_parameter: false,
-                        };
+                    let line_number = node.start_position().row + 1;
+                    let object_info = ObjectInfo {
+                        variable_name: variable_name.clone(),
+                        class_name: type_name,
+                        declared_at_line: line_number,
+                        is_parameter: false,
+                    };
 
-                        self.object_registry.insert(variable_name, object_info);
-                    }
-                }
-                // If the right side is a method call, try to infer return type
-                else if right.kind() == "method_invocation" {
-                    let method_call = self.extract_enhanced_method_call(&right, source);
-                    // Try to find the method in our classes to get return type
-                    if let Some(return_type) = self
-                        .get_method_return_type(&method_call.target_class, &method_call.method_name)
-                    {
-                        self.type_inference
-                            .insert(variable_name.clone(), return_type);
-                    }
+                    self.object_registry.insert(variable_name, object_info);
                 }
             }
+            // If the right side is a method call, try to infer return type
+            else if right.kind() == "method_invocation" {
+                let method_call = self.extract_enhanced_method_call(&right, source);
+                // Try to find the method in our classes to get return type
+                if let Some(return_type) =
+                    self.get_method_return_type(&method_call.target_class, &method_call.method_name)
+                {
+                    self.type_inference
+                        .insert(variable_name.clone(), return_type);
+                }
+            }
+        }
     }
 
     fn extract_enhanced_method_call(&self, node: &Node, source: &str) -> MethodCall {
         let mut method_call = MethodCall {
-            caller_object: None,
+            caller_method: self
+                .current_method
+                .clone()
+                .unwrap_or_else(|| "main".to_string()),
+            caller_class: self
+                .current_class_name
+                .clone()
+                .unwrap_or_else(|| "unknown".to_string()),
             method_name: String::new(),
             target_class: "unknown".to_string(),
             is_static_call: false,
@@ -547,11 +624,12 @@ impl JavaAnalyzer {
         // Extract caller object
         if let Some(object_node) = node.child_by_field_name("object") {
             let object_name = node_text(&object_node, source).to_string();
-            method_call.caller_object = Some(object_name.clone());
 
-            // Try to resolve the object's class
-            if let Some(class_name) = self.resolve_object_class(&object_name) {
-                method_call.target_class = class_name;
+            // Try to resolve object's class using type inference first
+            if let Some(inferred_type) = self.type_inference.get(&object_name) {
+                method_call.target_class = inferred_type.clone();
+            } else if let Some(class_name) = self.resolve_object_class(&object_name) {
+                method_call.target_class = class_name.clone();
             } else {
                 // Check if it's a static class call (starts with uppercase)
                 if object_name
@@ -563,7 +641,7 @@ impl JavaAnalyzer {
                     method_call.target_class = object_name.clone();
                     method_call.is_static_call = true;
                 } else {
-                    // For unresolved objects, use the object name as a fallback
+                    // For unresolved objects, use object name as a fallback
                     method_call.target_class = object_name.clone();
                 }
             }
@@ -621,12 +699,53 @@ impl JavaAnalyzer {
         for child in block_node.children(&mut cursor) {
             if child.kind() == "expression_statement"
                 && let Some(expr) = child.child(0)
-                    && expr.kind() == "method_invocation" {
-                        calls.push(self.extract_enhanced_method_call(&expr, source));
-                    }
+                && expr.kind() == "method_invocation"
+            {
+                calls.push(self.extract_enhanced_method_call(&expr, source));
+            }
         }
 
         calls
+    }
+
+    fn process_method_calls_in_block(&mut self, block_node: &Node, source: &str) {
+        let mut cursor = block_node.walk();
+        for child in block_node.children(&mut cursor) {
+            if child.kind() == "expression_statement"
+                && let Some(expr) = child.child(0)
+                && expr.kind() == "method_invocation"
+            {
+                self.process_method_invocation(&expr, source);
+            }
+        }
+    }
+
+    fn process_method_invocation(&mut self, node: &Node, source: &str) {
+        // Track method calls for relationship analysis
+        if let Some(ref class) = self.current_class {
+            let method_call = self.extract_enhanced_method_call(node, source);
+            if !method_call.method_name.is_empty() {
+                // Create method-to-method relationship
+                let from_method =
+                    format!("{}.{}", method_call.caller_class, method_call.caller_method);
+
+                // Resolve the target class and create proper method name
+                let target_class_name = if method_call.target_class != "unknown" {
+                    method_call.target_class.clone()
+                } else {
+                    // Fallback to the object name if we can't resolve the class
+                    method_call.target_class.clone()
+                };
+
+                let to_method = format!("{}.{}", target_class_name, method_call.method_name);
+
+                self.relationships.push(Relationship {
+                    from: from_method,
+                    to: to_method,
+                    relationship_type: RelationshipType::MethodCall,
+                });
+            }
+        }
     }
 }
 

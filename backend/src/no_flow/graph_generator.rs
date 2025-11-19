@@ -15,6 +15,9 @@ pub struct GraphConfig {
     pub show_field_types: bool,
     pub show_private_members: bool,
     pub include_relationships: bool,
+    pub show_method_calls: bool,
+    pub cluster_fields: bool,
+    pub cluster_methods: bool,
 }
 
 impl Default for GraphConfig {
@@ -27,6 +30,9 @@ impl Default for GraphConfig {
             show_field_types: true,
             show_private_members: true,
             include_relationships: true,
+            show_method_calls: true,
+            cluster_fields: true,
+            cluster_methods: true,
         }
     }
 }
@@ -53,265 +59,368 @@ impl GraphGenerator {
 
         dot.push_str("digraph JavaClasses {\n");
         dot.push_str("    rankdir=TB;\n");
-        dot.push_str("    node [shape=record, fontname=\"Arial\"];\n");
+        dot.push_str("    fontname=\"Arial\";\n");
+        dot.push_str("    node [fontname=\"Arial\"];\n");
         dot.push_str("    edge [fontname=\"Arial\", fontsize=10];\n\n");
 
-        // Generate class nodes
+        // Generate class subgraphs
         for class in &analysis.classes {
-            dot.push_str(&self.generate_class_node(class));
+            dot.push_str(&self.generate_class_subgraph(class, analysis));
             dot.push('\n');
         }
 
-        // Generate relationships
+        // Generate inter-class relationships
         if self.config.include_relationships {
-            for relationship in &analysis.relationships {
-                dot.push_str(&self.generate_relationship_edge(relationship));
-                dot.push('\n');
-            }
+            dot.push_str(&self.generate_inter_class_relationships(analysis));
         }
 
         dot.push_str("}\n");
         dot
     }
 
-    fn generate_class_node(&self, class: &JavaClass) -> String {
-        let mut label = String::new();
+    fn generate_class_subgraph(&self, class: &JavaClass, analysis: &AnalysisResult) -> String {
+        let mut subgraph = String::new();
+        let safe_class_name = class.name.replace('.', "_");
 
-        // Class header
-        let class_header = if class.is_interface {
-            format!("{} (interface)", class.name)
-        } else if class.is_abstract {
-            format!("{} (abstract)", class.name)
-        } else {
-            class.name.clone()
-        };
+        // Start subgraph
+        subgraph.push_str(&format!("    subgraph cluster_{} {{\n", safe_class_name));
+        subgraph.push_str(&format!(
+            "        label=\"{}\";\n",
+            self.get_class_label(class)
+        ));
+        subgraph.push_str("        style=filled;\n");
+        subgraph.push_str("        color=lightgrey;\n");
+        subgraph.push_str("        node [shape=box, style=filled, fillcolor=white];\n\n");
 
-        label.push_str(&self.escape_label(&class_header));
+        // Add class header node
+        subgraph.push_str(&format!(
+            "        \"{}_class\" [label=\"{}\", shape=ellipse, style=filled, fillcolor=lightblue];\n",
+            safe_class_name, self.get_class_label(class)
+        ));
 
-        // Fields section
+        // Add field nodes
         if self.config.show_fields && !class.fields.is_empty() {
-            label.push('|');
-            let mut field_parts = Vec::new();
+            if self.config.cluster_fields {
+                subgraph.push_str(&format!(
+                    "        subgraph cluster_{}_fields {{\n",
+                    safe_class_name
+                ));
+                subgraph.push_str("            label=\"Fields\";\n");
+                subgraph.push_str("            style=dashed;\n");
+            }
 
             for field in &class.fields {
                 if !self.config.show_private_members && field.visibility == "private" {
                     continue;
                 }
-                field_parts.push(self.format_field(field));
+                subgraph.push_str(&self.generate_field_node(field, &safe_class_name));
             }
 
-            if !field_parts.is_empty() {
-                label.push_str(&field_parts.join("\\l"));
-                label.push_str("\\l");
+            if self.config.cluster_fields {
+                subgraph.push_str("        }\n");
             }
         }
 
-        // Methods section
-        if self.config.show_methods
-            && (!class.methods.is_empty()
-                || (self.config.show_constructors && !class.constructors.is_empty()))
-        {
-            label.push('|');
-            let mut method_parts = Vec::new();
-
-            // Add constructors
-            if self.config.show_constructors {
-                for constructor in &class.constructors {
-                    if !self.config.show_private_members && constructor.visibility == "private" {
-                        continue;
-                    }
-                    method_parts.push(self.format_method(constructor, true));
-                }
+        // Add method nodes
+        if self.config.show_methods && !class.methods.is_empty() {
+            if self.config.cluster_methods {
+                subgraph.push_str(&format!(
+                    "        subgraph cluster_{}_methods {{\n",
+                    safe_class_name
+                ));
+                subgraph.push_str("            label=\"Methods\";\n");
+                subgraph.push_str("            style=dashed;\n");
             }
 
-            // Add methods
             for method in &class.methods {
                 if !self.config.show_private_members && method.visibility == "private" {
                     continue;
                 }
-                method_parts.push(self.format_method(method, false));
+                subgraph.push_str(&self.generate_method_node(method, &safe_class_name));
             }
 
-            if !method_parts.is_empty() {
-                label.push_str(&method_parts.join("\\l"));
-                label.push_str("\\l");
+            if self.config.cluster_methods {
+                subgraph.push_str("        }\n");
             }
         }
 
-        // Generate the node with styling
-        let node_style = self.get_node_style(class);
-        format!(
-            "    {} [label=\"{}\", {}];",
-            self.sanitize_name(&class.name),
-            label,
-            node_style
-        )
+        // Add constructor nodes (commented out - not needed for visualization)
+        // if self.config.show_constructors && !class.constructors.is_empty() {
+        //     for constructor in &class.constructors {
+        //         if !self.config.show_private_members && constructor.visibility == "private" {
+        //             continue;
+        //         }
+        //         subgraph.push_str(&self.generate_constructor_node(constructor, &safe_class_name));
+        //     }
+        // }
+
+        // Add internal connections (methods accessing fields)
+        subgraph.push_str(&self.generate_internal_connections(class, &safe_class_name));
+
+        subgraph.push_str("    }\n");
+        subgraph
     }
 
-    fn generate_class_with_fields(&self, class: &JavaClass) -> String {
-        let mut label = String::new();
-
-        // Class header
-        let class_header = if class.is_interface {
+    fn get_class_label(&self, class: &JavaClass) -> String {
+        if class.is_interface {
             format!("{} (interface)", class.name)
         } else if class.is_abstract {
             format!("{} (abstract)", class.name)
         } else {
             class.name.clone()
+        }
+    }
+
+    fn generate_field_node(&self, field: &JavaField, class_name: &str) -> String {
+        let field_id = format!("{}_{}", class_name, field.name);
+        let label = self.format_field(field);
+
+        format!(
+            "        \"{}\" [label=\"{}\", shape=note, style=filled, fillcolor=lightyellow];\n",
+            field_id, label
+        )
+    }
+
+    fn generate_method_node(&self, method: &JavaMethod, class_name: &str) -> String {
+        let method_id = format!("{}_{}", class_name, method.name);
+        let label = self.format_method(method);
+
+        let color = match method.visibility.as_str() {
+            "public" => "lightgreen",
+            "private" => "lightcoral",
+            "protected" => "lightorange",
+            _ => "lightgray",
         };
 
-        label.push_str(&self.escape_label(&class_header));
+        format!(
+            "        \"{}\" [label=\"{}\", shape=component, style=filled, fillcolor={}];\n",
+            method_id, label, color
+        )
+    }
 
-        // Fields section only
-        if self.config.show_fields && !class.fields.is_empty() {
-            label.push('|');
-            let mut field_parts = Vec::new();
+    fn generate_constructor_node(&self, constructor: &JavaMethod, class_name: &str) -> String {
+        let constructor_id = format!("{}_constructor", class_name);
+        let label = self.format_constructor(constructor);
 
-            for field in &class.fields {
-                if !self.config.show_private_members && field.visibility == "private" {
-                    continue;
-                }
-                field_parts.push(self.format_field(field));
+        format!(
+            "        \"{}\" [label=\"{}\", shape=house, style=filled, fillcolor=lightcyan];\n",
+            constructor_id, label
+        )
+    }
+
+    fn generate_internal_connections(&self, class: &JavaClass, class_name: &str) -> String {
+        let mut connections = String::new();
+
+        // Connect class to its fields and methods
+        for field in &class.fields {
+            if !self.config.show_private_members && field.visibility == "private" {
+                continue;
             }
+            let field_id = format!("{}_{}", class_name, field.name);
+            connections.push_str(&format!(
+                "        \"{}_class\" -> \"{}\" [style=dashed, arrowhead=none];\n",
+                class_name, field_id
+            ));
+        }
 
-            if !field_parts.is_empty() {
-                label.push_str(&field_parts.join("\\l"));
-                label.push_str("\\l");
+        for method in &class.methods {
+            if !self.config.show_private_members && method.visibility == "private" {
+                continue;
+            }
+            let method_id = format!("{}_{}", class_name, method.name);
+            connections.push_str(&format!(
+                "        \"{}_class\" -> \"{}\" [style=dashed, arrowhead=none];\n",
+                class_name, method_id
+            ));
+        }
+
+        // Constructors removed - not needed for visualization
+
+        connections
+    }
+
+    fn generate_inter_class_relationships(&self, analysis: &AnalysisResult) -> String {
+        let mut relationships = String::new();
+
+        for relationship in &analysis.relationships {
+            match relationship.relationship_type {
+                RelationshipType::Extends => {
+                    relationships.push_str(&format!(
+                        "    \"{}_class\" -> \"{}_class\" [arrowhead=empty, style=solid, label=extends];\n",
+                        relationship.from.replace('.', "_"),
+                        relationship.to.replace('.', "_")
+                    ));
+                }
+                RelationshipType::Implements => {
+                    relationships.push_str(&format!(
+                        "    \"{}_class\" -> \"{}_class\" [arrowhead=empty, style=dashed, label=implements];\n",
+                        relationship.from.replace('.', "_"),
+                        relationship.to.replace('.', "_")
+                    ));
+                }
+                RelationshipType::Calls => {
+                    if self.config.show_method_calls {
+                        relationships
+                            .push_str(&self.generate_legacy_method_call_relationship(relationship));
+                    }
+                }
+                RelationshipType::MethodCall => {
+                    if self.config.show_method_calls {
+                        relationships
+                            .push_str(&self.generate_method_call_relationship(relationship));
+                    }
+                }
+                _ => {}
             }
         }
 
-        let node_style = self.get_node_style(class);
+        relationships
+    }
+
+    fn generate_method_call_relationship(&self, relationship: &Relationship) -> String {
+        // For method calls, connect specific method nodes directly
+        let from_clean = relationship.from.replace('.', "_");
+        let to_clean = relationship.to.replace('.', "_");
+
+        // Create direct method-to-method connections
         format!(
-            "    {} [label=\"{}\", {}];",
-            self.sanitize_name(&class.name),
-            label,
-            node_style
+            "    \"{}\" -> \"{}\" [arrowhead=normal, style=solid, color=blue];\n",
+            from_clean, to_clean
+        )
+    }
+
+    fn generate_legacy_method_call_relationship(&self, relationship: &Relationship) -> String {
+        // For legacy method calls (class-to-class)
+        let from_clean = relationship.from.replace('.', "_");
+        let to_clean = relationship.to.replace('.', "_");
+
+        format!(
+            "    \"{}\" -> \"{}\" [arrowhead=normal, style=solid, color=blue];\n",
+            from_clean, to_clean
         )
     }
 
     fn format_field(&self, field: &JavaField) -> String {
-        let visibility_symbol = self.get_visibility_symbol(&field.visibility);
-        let modifiers = self.get_field_modifiers(field);
-
-        if self.config.show_field_types {
-            format!(
-                "{}{} {}: {}",
-                visibility_symbol, modifiers, field.name, field.field_type
-            )
+        let visibility = if field.visibility == "package" {
+            ""
         } else {
-            format!("{}{} {}", visibility_symbol, modifiers, field.name)
-        }
+            &field.visibility
+        };
+        let static_modifier = if field.is_static { "static " } else { "" };
+        let final_modifier = if field.is_final { "final " } else { "" };
+
+        let type_str = if self.config.show_field_types {
+            format!("{} ", field.field_type)
+        } else {
+            String::new()
+        };
+
+        format!(
+            "{}{}{}{}{}",
+            visibility, static_modifier, final_modifier, type_str, field.name
+        )
     }
 
-    fn format_method(&self, method: &JavaMethod, is_constructor: bool) -> String {
-        let visibility_symbol = self.get_visibility_symbol(&method.visibility);
-        let modifiers = self.get_method_modifiers(method);
+    fn format_method(&self, method: &JavaMethod) -> String {
+        let visibility = if method.visibility == "package" {
+            ""
+        } else {
+            &method.visibility
+        };
+        let static_modifier = if method.is_static { "static " } else { "" };
+        let abstract_modifier = if method.is_abstract { "abstract " } else { "" };
 
         let params = if self.config.show_method_parameters {
-            let param_strings: Vec<String> = method
+            let param_strs: Vec<String> = method
                 .parameters
                 .iter()
-                .map(|p| format!("{}: {}", p.name, p.param_type))
+                .map(|p| {
+                    if self.config.show_field_types {
+                        format!("{} {}", p.param_type, p.name)
+                    } else {
+                        p.name.clone()
+                    }
+                })
                 .collect();
-            format!("({})", param_strings.join(", "))
+            format!("({})", param_strs.join(", "))
         } else {
             "()".to_string()
         };
 
-        if is_constructor {
-            format!(
-                "{}{}{}{}",
-                visibility_symbol, modifiers, method.name, params
-            )
-        } else {
-            format!(
-                "{}{}{}{}: {}",
-                visibility_symbol, modifiers, method.name, params, method.return_type
-            )
-        }
-    }
-
-    fn get_visibility_symbol(&self, visibility: &str) -> &str {
-        match visibility {
-            "public" => "+ ",
-            "private" => "- ",
-            "protected" => "# ",
-            _ => "~ ", // package-private
-        }
-    }
-
-    fn get_field_modifiers(&self, field: &JavaField) -> String {
-        let mut modifiers = String::new();
-        if field.is_static {
-            modifiers.push_str("(static) ");
-        }
-        if field.is_final {
-            modifiers.push_str("(final) ");
-        }
-        modifiers
-    }
-
-    fn get_method_modifiers(&self, method: &JavaMethod) -> String {
-        let mut modifiers = String::new();
-        if method.is_static {
-            modifiers.push_str("(static) ");
-        }
-        if method.is_abstract {
-            modifiers.push_str("(abstract) ");
-        }
-        modifiers
-    }
-
-    fn get_node_style(&self, class: &JavaClass) -> String {
-        if class.is_interface {
-            "fillcolor=lightblue, style=filled".to_string()
-        } else if class.is_abstract {
-            "fillcolor=lightyellow, style=filled".to_string()
-        } else {
-            "fillcolor=lightgreen, style=filled".to_string()
-        }
-    }
-
-    fn generate_relationship_edge(&self, relationship: &Relationship) -> String {
-        let (arrow_style, label, color) = match relationship.relationship_type {
-            RelationshipType::Extends => ("arrowhead=empty", "extends", "blue"),
-            RelationshipType::Implements => {
-                ("arrowhead=empty, style=dashed", "implements", "green")
-            }
-            RelationshipType::Uses => ("arrowhead=open", "uses", "gray"),
-            RelationshipType::Calls => ("arrowhead=open, style=dashed", "calls", "orange"),
-            RelationshipType::Contains => ("arrowhead=diamond", "contains", "purple"),
-        };
-
         format!(
-            "    {} -> {} [{}, label=\"{}\", color={}];",
-            self.sanitize_name(&relationship.from),
-            self.sanitize_name(&relationship.to),
-            arrow_style,
-            label,
-            color
+            "{}{}{}{}{}: {}",
+            visibility, static_modifier, abstract_modifier, method.name, params, method.return_type
         )
     }
 
-    fn sanitize_name(&self, name: &str) -> String {
-        name.replace([' ', '.', '<', '>', '[', ']'], "_")
+    fn format_constructor(&self, constructor: &JavaMethod) -> String {
+        let visibility = if constructor.visibility == "package" {
+            ""
+        } else {
+            &constructor.visibility
+        };
+
+        let params = if self.config.show_method_parameters {
+            let param_strs: Vec<String> = constructor
+                .parameters
+                .iter()
+                .map(|p| {
+                    if self.config.show_field_types {
+                        format!("{} {}", p.param_type, p.name)
+                    } else {
+                        p.name.clone()
+                    }
+                })
+                .collect();
+            format!("({})", param_strs.join(", "))
+        } else {
+            "()".to_string()
+        };
+
+        format!("{}{}", visibility, params)
     }
 
-    fn escape_label(&self, text: &str) -> String {
-        text.replace('\"', "\\\"")
-            .replace('{', "\\{")
-            .replace('}', "\\}")
-            .replace('|', "\\|")
+    fn escape_label(&self, label: &str) -> String {
+        label.replace('"', "\\\"")
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analyzer::{JavaClass, JavaField, JavaMethod, JavaParameter};
+    use crate::analyzer::{JavaClass, JavaField, JavaMethod};
 
     #[test]
     fn test_simple_dot_generation() {
+        let class = JavaClass {
+            name: "TestClass".to_string(),
+            visibility: "public".to_string(),
+            is_abstract: false,
+            is_interface: false,
+            extends: None,
+            implements: Vec::new(),
+            fields: vec![],
+            methods: vec![],
+            constructors: Vec::new(),
+        };
+
+        let analysis = AnalysisResult {
+            classes: vec![class],
+            relationships: Vec::new(),
+            object_registry: std::collections::HashMap::new(),
+            type_inference: std::collections::HashMap::new(),
+        };
+
+        let generator = GraphGenerator::new();
+        let dot = generator.generate_dot(&analysis);
+
+        assert!(dot.contains("digraph JavaClasses"));
+        assert!(dot.contains("subgraph cluster_TestClass"));
+        assert!(dot.contains("TestClass_class"));
+    }
+
+    #[test]
+    fn test_class_with_fields_and_methods() {
         let class = JavaClass {
             name: "TestClass".to_string(),
             visibility: "public".to_string(),
@@ -332,8 +441,8 @@ mod tests {
                 visibility: "public".to_string(),
                 is_static: false,
                 is_abstract: false,
-                parameters: Vec::new(),
-                calls: Vec::new(),
+                parameters: vec![],
+                calls: vec![],
             }],
             constructors: Vec::new(),
         };
@@ -348,9 +457,9 @@ mod tests {
         let generator = GraphGenerator::new();
         let dot = generator.generate_dot(&analysis);
 
-        assert!(dot.contains("digraph JavaClasses"));
-        assert!(dot.contains("TestClass"));
-        assert!(dot.contains("name: String"));
-        assert!(dot.contains("getName(): String"));
+        assert!(dot.contains("TestClass_name"));
+        assert!(dot.contains("TestClass_getName"));
+        assert!(dot.contains("shape=note"));
+        assert!(dot.contains("shape=component"));
     }
 }

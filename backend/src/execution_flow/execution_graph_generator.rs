@@ -83,9 +83,10 @@ impl ExecutionGraphGenerator {
 
             // If we have a max steps limit, keep only recent steps for next iteration
             if let Some(max_steps) = self.config.max_steps_per_graph
-                && cumulative_steps.len() > max_steps {
-                    cumulative_steps = cumulative_steps.into_iter().skip(1).collect();
-                }
+                && cumulative_steps.len() > max_steps
+            {
+                cumulative_steps = cumulative_steps.into_iter().skip(1).collect();
+            }
         }
 
         graphs
@@ -258,10 +259,11 @@ impl ExecutionGraphGenerator {
         // Connect method calls to objects
         for step in steps {
             if let ExecutionAction::MethodCall {
-                    caller,
-                    method_name,
-                    ..
-                } = &step.action {
+                caller,
+                method_name,
+                ..
+            } = &step.action
+            {
                 if let Some(caller_name) = caller {
                     let obj_id = format!("obj_{}", self.sanitize_name(caller_name));
                     let step_id = format!("step_{}", step.step_number);
