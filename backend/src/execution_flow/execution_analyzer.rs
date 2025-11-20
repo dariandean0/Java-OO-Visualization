@@ -115,11 +115,7 @@ impl ExecutionAnalyzer {
         main_method
     }
 
-    fn find_main_recursive<'a>(
-        node: &Node<'a>,
-        source: &str,
-        main_method: &mut Option<Node<'a>>,
-    ) {
+    fn find_main_recursive<'a>(node: &Node<'a>, source: &str, main_method: &mut Option<Node<'a>>) {
         if node.kind() == "method_declaration" {
             let method_text = node_text(node, source);
             if method_text.contains("main") && method_text.contains("static") {

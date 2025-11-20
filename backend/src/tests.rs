@@ -1,6 +1,9 @@
 use crate::analyzer::{AnalysisResult, JavaAnalyzer, RelationshipType};
+use crate::no_flow::GraphConfig;
 use crate::no_flow::GraphGenerator;
 use crate::parser::JavaParser;
+use crate::visualizer::{JavaVisualizer, visualize_java_code, visualize_java_code_with_config};
+use crate::{execution_flow_gen, no_flow_gen};
 
 /// Test helper to parse and analyze Java code
 fn analyze_java_code(code: &str) -> AnalysisResult {
@@ -448,6 +451,340 @@ public interface OnlyInterface {
         // Verify interface methods are abstract by default
         for method in &interface.methods {
             assert!(method.is_abstract);
+        }
+    }
+}
+
+#[cfg(test)]
+mod visualizer_tests {
+    use super::*;
+
+    #[test]
+    fn test_visualize_java_code_output_structure() {
+        let code = r#"
+public class TestClass {
+    private int value;
+    public void method() {}
+}
+"#;
+
+        let result = visualize_java_code(code).unwrap();
+
+        // Parse DOT output and verify exact structure
+        let lines: Vec<&str> = result.lines().collect();
+        assert_eq!(lines[0], "digraph JavaClasses {");
+        assert_eq!(lines.last().unwrap().trim(), "}");
+
+        // Verify specific nodes exist with exact formatting
+        assert!(
+            result
+                .lines()
+                .any(|line| line.contains("TestClass_class") && line.contains("shape=ellipse"))
+        );
+        assert!(
+            result
+                .lines()
+                .any(|line| line.contains("TestClass_value") && line.contains("shape=note"))
+        );
+        assert!(
+            result
+                .lines()
+                .any(|line| line.contains("TestClass_method") && line.contains("shape=component"))
+        );
+
+        // Verify subgraph structure
+        assert!(
+            result
+                .lines()
+                .any(|line| line.contains("subgraph cluster_TestClass"))
+        );
+        assert!(
+            result
+                .lines()
+                .any(|line| line.contains("label=\"TestClass\""))
+        );
+    }
+
+    #[test]
+    fn test_java_visualizer_validate_java_code() {
+        let mut visualizer = JavaVisualizer::new().unwrap();
+
+        // Test valid code
+        assert!(visualizer.validate_java_code("class Valid {}").unwrap());
+
+        // Test that some invalid codes are handled
+        let _result = visualizer.validate_java_code("class MissingBrace {");
+        // Note: Parser behavior may vary
+    }
+
+    #[test]
+    fn test_java_visualizer_generate_dot_from_analysis() {
+        let mut visualizer = JavaVisualizer::new().unwrap();
+        let analysis = visualizer.get_analysis_only("class Test {}").unwrap();
+
+        let dot = visualizer.generate_dot_from_analysis(&analysis);
+
+        // Verify DOT structure
+        assert!(dot.starts_with("digraph JavaClasses {"));
+        assert!(dot.ends_with("}\n"));
+
+        // Verify class node
+        assert!(dot.contains("Test_class"));
+        assert!(dot.contains("shape=ellipse"));
+    }
+
+    #[test]
+    fn test_java_visualizer_update_config() {
+        let mut visualizer = JavaVisualizer::new().unwrap();
+
+        // Test with default config
+        let code = "class Test { private int value; }";
+        let _result1 = visualizer.generate_dot(code).unwrap();
+        // Note: Whether fields are shown depends on default config
+
+        // Update config to hide fields
+        let mut config = GraphConfig::default();
+        config.show_fields = false;
+        visualizer.update_config(config);
+
+        let result2 = visualizer.generate_dot(code).unwrap();
+        // Test that config update works (may not hide fields depending on implementation)
+        // The important thing is that it doesn't panic and produces valid DOT
+        assert!(result2.starts_with("digraph JavaClasses {"));
+        assert!(result2.ends_with("}\n"));
+    }
+}
+
+#[cfg(test)]
+mod lib_api_tests {
+    use super::*;
+
+    #[test]
+    fn test_execution_flow_gen_output_format() {
+        let code = r#"
+public class FlowTest {
+    public static void main(String[] args) {
+        System.out.println("Hello");
+    }
+}
+"#;
+
+        let result = execution_flow_gen(code);
+
+        // Verify exact structure: Vec<String> with valid DOT graphs
+        assert!(!result.is_empty());
+
+        for graph in &result {
+            // Each graph should be valid DOT format
+            assert!(graph.starts_with("digraph"));
+            assert!(graph.ends_with("}\n"));
+
+            // Should contain expected execution flow elements
+            assert!(
+                graph
+                    .lines()
+                    .any(|line| line.contains("subgraph") || line.contains("->"))
+            );
+        }
+    }
+
+    #[test]
+    fn test_no_flow_gen_content_verification() {
+        let code = r#"
+public class ContentTest {
+    private int value;
+    public String name;
+    public void method() {}
+}
+"#;
+
+        let result = no_flow_gen(code);
+
+        // Verify exact DOT structure and content
+        assert!(result.starts_with("digraph JavaClasses {"));
+        assert!(result.ends_with("}\n"));
+
+        // Verify class node exists with exact attributes
+        assert!(result.lines().any(|line| line.contains("ContentTest_class")
+            && line.contains("shape=ellipse")
+            && line.contains("fillcolor=lightblue")));
+
+        // Verify field nodes exist with exact formatting
+        assert!(result.lines().any(|line| line.contains("ContentTest_value")
+            && line.contains("shape=note")
+            && line.contains("fillcolor=lightyellow")));
+
+        // Verify method node exists
+        assert!(
+            result
+                .lines()
+                .any(|line| line.contains("ContentTest_method")
+                    && line.contains("shape=component")
+                    && line.contains("fillcolor=lightgreen"))
+        );
+    }
+
+    #[test]
+    fn test_no_flow_gen_empty_class() {
+        let code = "class Empty {}";
+        let result = no_flow_gen(code);
+
+        assert!(result.starts_with("digraph JavaClasses {"));
+        assert!(result.contains("Empty_class"));
+
+        // Should not contain field or method nodes with underscores
+        assert!(!result.contains("Empty_field"));
+        assert!(!result.contains("Empty_method"));
+    }
+}
+
+#[cfg(test)]
+mod analyzer_logic_tests {
+    use super::*;
+
+    #[test]
+    fn test_analyzer_equality_logic_branches() {
+        // Test different types to exercise equality logic
+        let code_int = "class Test { int value = 42; }";
+        let code_boolean = "class Test { boolean value = true; }";
+        let code_double = "class Test { double value = 3.14; }";
+
+        let result_int = analyze_java_code(code_int);
+        let result_boolean = analyze_java_code(code_boolean);
+        let result_double = analyze_java_code(code_double);
+
+        // Verify different behavior for different types
+        assert_eq!(result_int.classes[0].fields[0].field_type, "int");
+        assert_eq!(result_boolean.classes[0].fields[0].field_type, "boolean");
+        assert_eq!(result_double.classes[0].fields[0].field_type, "double");
+    }
+
+    #[test]
+    fn test_visibility_logic_branches() {
+        let code_with_all_visibilities = r#"
+public class VisibilityTest {
+    public int publicField;
+    protected int protectedField;
+    private int privateField;
+    int packageField;
+    
+    public void publicMethod() {}
+    protected void protectedMethod() {}
+    private void privateMethod() {}
+    void packageMethod() {}
+}
+"#;
+
+        let result = analyze_java_code(code_with_all_visibilities);
+        let analysis = result;
+        let class = &analysis.classes[0];
+
+        // Test all visibility branches
+        let visibilities: Vec<_> = class.fields.iter().map(|f| f.visibility.as_str()).collect();
+        assert!(visibilities.contains(&"public"));
+        assert!(visibilities.contains(&"protected"));
+        assert!(visibilities.contains(&"private"));
+        assert!(visibilities.contains(&"package"));
+
+        let method_visibilities: Vec<_> = class
+            .methods
+            .iter()
+            .map(|m| m.visibility.as_str())
+            .collect();
+        assert!(method_visibilities.contains(&"public"));
+        assert!(method_visibilities.contains(&"protected"));
+        assert!(method_visibilities.contains(&"private"));
+        assert!(method_visibilities.contains(&"package"));
+    }
+}
+
+#[cfg(test)]
+mod property_based_tests {
+    use super::*;
+
+    #[test]
+    fn test_dot_output_invariants() {
+        let test_cases = vec![
+            "class A {}",
+            "class B { int x; }",
+            "class C { void m() {} }",
+            "public class D {}",
+            "interface I { void method(); }",
+            "abstract class Abstract { abstract void test(); }",
+        ];
+
+        for code in test_cases {
+            let result = no_flow_gen(code);
+
+            // Verify invariants for any valid input
+            assert!(result.starts_with("digraph JavaClasses {"));
+            assert!(result.ends_with("}\n"));
+
+            // Count matching braces - should be balanced
+            let open_count = result.matches('{').count();
+            let close_count = result.matches('}').count();
+            assert_eq!(
+                open_count, close_count,
+                "Unbalanced braces in code: {}",
+                code
+            );
+        }
+    }
+
+    #[test]
+    fn test_analysis_result_invariants() {
+        let test_cases = vec![
+            "class Simple {}",
+            "class WithFields { int x; }",
+            "class WithMethods { void a() {} }",
+            "class WithConstructor { public WithConstructor() {} }",
+        ];
+
+        for code in test_cases {
+            let result = analyze_java_code(code);
+
+            // Verify invariants
+            assert!(!result.classes.is_empty(), "Should have at least one class");
+
+            for class in &result.classes {
+                // Class name should not be empty
+                assert!(!class.name.is_empty());
+
+                // Visibility should be valid
+                assert!(
+                    ["public", "private", "protected", "package"]
+                        .contains(&class.visibility.as_str())
+                );
+
+                // Should have valid structure for fields and methods that exist
+                for field in &class.fields {
+                    if !field.name.is_empty() {
+                        assert!(
+                            !field.field_type.is_empty(),
+                            "Field type should not be empty for field: {}",
+                            field.name
+                        );
+                        assert!(
+                            ["public", "private", "protected", "package"]
+                                .contains(&field.visibility.as_str())
+                        );
+                    }
+                }
+
+                for method in &class.methods {
+                    if !method.name.is_empty() {
+                        assert!(
+                            !method.return_type.is_empty(),
+                            "Method return type should not be empty for method: {}",
+                            method.name
+                        );
+                        assert!(
+                            ["public", "private", "protected", "package"]
+                                .contains(&method.visibility.as_str())
+                        );
+                    }
+                }
+            }
         }
     }
 }

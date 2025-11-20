@@ -198,8 +198,6 @@ impl GraphGenerator {
         )
     }
 
-
-
     fn generate_internal_connections(&self, class: &JavaClass, class_name: &str) -> String {
         let mut connections = String::new();
 

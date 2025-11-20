@@ -70,7 +70,6 @@ use std::ffi::CString;
 use std::os::raw::c_char;
 use std::str;
 
-
 fn to_c_string(s: String) -> *mut c_char {
     CString::new(s).unwrap().into_raw()
 }

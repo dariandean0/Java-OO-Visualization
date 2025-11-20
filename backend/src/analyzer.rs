@@ -155,9 +155,10 @@ impl JavaAnalyzer {
 
                 // Process method invocations within this method
                 if self.current_class_name.is_some()
-                    && let Some(block_node) = node.child_by_field_name("body") {
-                        self.process_method_calls_in_block(&block_node, source);
-                    }
+                    && let Some(block_node) = node.child_by_field_name("body")
+                {
+                    self.process_method_calls_in_block(&block_node, source);
+                }
 
                 self.current_method = None;
             }
@@ -174,8 +175,6 @@ impl JavaAnalyzer {
             type_inference: self.type_inference.clone(),
         }
     }
-
-
 
     fn process_class_declaration(&mut self, node: &Node, source: &str) {
         if let Some(current_class) = self.current_class.take() {
@@ -276,9 +275,10 @@ impl JavaAnalyzer {
 
         // Interface methods are automatically abstract
         if let Some(ref class) = self.current_class
-            && class.is_interface {
-                method.is_abstract = true;
-            }
+            && class.is_interface
+        {
+            method.is_abstract = true;
+        }
 
         if let Some(ref mut class) = self.current_class {
             class.methods.push(method);
@@ -361,8 +361,6 @@ impl JavaAnalyzer {
 
         method
     }
-
-
 
     fn extract_constructor(&self, node: &Node, source: &str) -> JavaMethod {
         let mut constructor = JavaMethod {
@@ -649,8 +647,6 @@ impl JavaAnalyzer {
         None
     }
 
-
-
     fn process_method_calls_in_block(&mut self, block_node: &Node, source: &str) {
         let mut cursor = block_node.walk();
         for child in block_node.children(&mut cursor) {
@@ -674,9 +670,10 @@ impl JavaAnalyzer {
             if child.kind() == "variable_declarator" {
                 // Look for method invocation in the initializer
                 if let Some(value_node) = child.child_by_field_name("value")
-                    && value_node.kind() == "method_invocation" {
-                        self.process_method_invocation(&value_node, source);
-                    }
+                    && value_node.kind() == "method_invocation"
+                {
+                    self.process_method_invocation(&value_node, source);
+                }
             }
         }
     }
