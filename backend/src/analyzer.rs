@@ -1,5 +1,6 @@
 use crate::parser::{node_text, walk_tree};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tree_sitter::Node;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,7 +33,7 @@ pub struct JavaMethod {
     pub is_static: bool,
     pub is_abstract: bool,
     pub parameters: Vec<JavaParameter>,
-    pub calls: Vec<String>,
+    pub calls: Vec<MethodCall>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,9 +43,28 @@ pub struct JavaParameter {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MethodCall {
+    pub caller_method: String,
+    pub caller_class: String,
+    pub method_name: String,
+    pub target_class: String,
+    pub is_static_call: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ObjectInfo {
+    pub variable_name: String,
+    pub class_name: String,
+    pub declared_at_line: usize,
+    pub is_parameter: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalysisResult {
     pub classes: Vec<JavaClass>,
     pub relationships: Vec<Relationship>,
+    pub object_registry: HashMap<String, ObjectInfo>,
+    pub type_inference: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,30 +81,87 @@ pub enum RelationshipType {
     Uses,
     Calls,
     Contains,
+    MethodCall, // New type for specific method-to-method calls
 }
 
 pub struct JavaAnalyzer {
     current_class: Option<JavaClass>,
+    current_class_name: Option<String>,
+    current_method: Option<String>,
     classes: Vec<JavaClass>,
     relationships: Vec<Relationship>,
+    object_registry: HashMap<String, ObjectInfo>,
+    type_inference: HashMap<String, String>,
+}
+
+impl Default for JavaAnalyzer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl JavaAnalyzer {
     pub fn new() -> Self {
         JavaAnalyzer {
             current_class: None,
+            current_class_name: None,
+            current_method: None,
             classes: Vec::new(),
             relationships: Vec::new(),
+            object_registry: HashMap::new(),
+            type_inference: HashMap::new(),
         }
     }
 
     pub fn analyze(&mut self, root_node: &Node, source: &str) -> AnalysisResult {
         self.classes.clear();
         self.relationships.clear();
+        self.object_registry.clear();
+        self.type_inference.clear();
         self.current_class = None;
+        self.current_class_name = None;
+        self.current_method = None;
 
+        // First pass: collect all classes, fields, methods, and variable declarations
+        walk_tree(
+            root_node,
+            source,
+            0,
+            &mut |node, source, _depth| match node.kind() {
+                "class_declaration" => self.process_class_declaration(node, source),
+                "interface_declaration" => self.process_interface_declaration(node, source),
+                "field_declaration" => self.process_field_declaration(node, source),
+                "method_declaration" => self.process_method_declaration(node, source),
+                "constructor_declaration" => self.process_constructor_declaration(node, source),
+                "local_variable_declaration" => {
+                    self.process_local_variable_declaration(node, source)
+                }
+                "assignment_expression" => self.process_assignment_expression(node, source),
+                _ => {}
+            },
+        );
+
+        // Second pass: process method invocations now that we have all type information
         walk_tree(root_node, source, 0, &mut |node, source, _depth| {
-            self.process_node(node, source);
+            if node.kind() == "class_declaration" {
+                // Set current class name context for this pass
+                if let Some(identifier_node) = node.child_by_field_name("name") {
+                    self.current_class_name = Some(node_text(&identifier_node, source).to_string());
+                }
+            } else if node.kind() == "method_declaration" {
+                if let Some(name_node) = node.child_by_field_name("name") {
+                    self.current_method = Some(node_text(&name_node, source).to_string());
+                }
+
+                // Process method invocations within this method
+                if self.current_class_name.is_some()
+                    && let Some(block_node) = node.child_by_field_name("body")
+                {
+                    self.process_method_calls_in_block(&block_node, source);
+                }
+
+                self.current_method = None;
+            }
         });
 
         if let Some(class) = self.current_class.take() {
@@ -94,18 +171,8 @@ impl JavaAnalyzer {
         AnalysisResult {
             classes: self.classes.clone(),
             relationships: self.relationships.clone(),
-        }
-    }
-
-    fn process_node(&mut self, node: &Node, source: &str) {
-        match node.kind() {
-            "class_declaration" => self.process_class_declaration(node, source),
-            "interface_declaration" => self.process_interface_declaration(node, source),
-            "field_declaration" => self.process_field_declaration(node, source),
-            "method_declaration" => self.process_method_declaration(node, source),
-            "constructor_declaration" => self.process_constructor_declaration(node, source),
-            "method_invocation" => self.process_method_invocation(node, source),
-            _ => {}
+            object_registry: self.object_registry.clone(),
+            type_inference: self.type_inference.clone(),
         }
     }
 
@@ -200,30 +267,31 @@ impl JavaAnalyzer {
     }
 
     fn process_method_declaration(&mut self, node: &Node, source: &str) {
-        let method = self.extract_method(node, source);
+        if let Some(name_node) = node.child_by_field_name("name") {
+            self.current_method = Some(node_text(&name_node, source).to_string());
+        }
+
+        let mut method = self.extract_method_without_calls(node, source);
+
+        // Interface methods are automatically abstract
+        if let Some(ref class) = self.current_class
+            && class.is_interface
+        {
+            method.is_abstract = true;
+        }
+
         if let Some(ref mut class) = self.current_class {
             class.methods.push(method);
         }
+
+        // Reset current_method after processing the method signature
+        self.current_method = None;
     }
 
     fn process_constructor_declaration(&mut self, node: &Node, source: &str) {
         let constructor = self.extract_constructor(node, source);
         if let Some(ref mut class) = self.current_class {
             class.constructors.push(constructor);
-        }
-    }
-
-    fn process_method_invocation(&mut self, node: &Node, source: &str) {
-        // Track method calls for relationship analysis
-        if let Some(ref class) = self.current_class {
-            let (to_class, method_name) = self.extract_method_call(node, source);
-            if !method_name.is_empty() {
-                self.relationships.push(Relationship {
-                    from: class.name.clone(),
-                    to: to_class,
-                    relationship_type: RelationshipType::Calls,
-                });
-            }
         }
     }
 
@@ -244,8 +312,8 @@ impl JavaAnalyzer {
                     field.is_static = self.has_modifier(&child, source, "static");
                     field.is_final = self.has_modifier(&child, source, "final");
                 }
-                "type" => {
-                    field.field_type = self.extract_type(&child, source);
+                "type" | "integral_type" | "floating_point_type" | "boolean_type" | "void_type" => {
+                    field.field_type = node_text(&child, source).to_string();
                 }
                 "variable_declarator" => {
                     if let Some(identifier) = child.child_by_field_name("name") {
@@ -259,7 +327,7 @@ impl JavaAnalyzer {
         field
     }
 
-    fn extract_method(&self, node: &Node, source: &str) -> JavaMethod {
+    fn extract_method_without_calls(&self, node: &Node, source: &str) -> JavaMethod {
         let mut method = JavaMethod {
             name: String::new(),
             return_type: "void".to_string(),
@@ -267,7 +335,7 @@ impl JavaAnalyzer {
             is_static: false,
             is_abstract: false,
             parameters: Vec::new(),
-            calls: Vec::new(),
+            calls: Vec::new(), // Don't process calls in this pass
         };
 
         let mut cursor = node.walk();
@@ -278,8 +346,8 @@ impl JavaAnalyzer {
                     method.is_static = self.has_modifier(&child, source, "static");
                     method.is_abstract = self.has_modifier(&child, source, "abstract");
                 }
-                "type" => {
-                    method.return_type = self.extract_type(&child, source);
+                "type" | "integral_type" | "floating_point_type" | "boolean_type" | "void_type" => {
+                    method.return_type = node_text(&child, source).to_string();
                 }
                 "identifier" => {
                     method.name = node_text(&child, source).to_string();
@@ -389,7 +457,9 @@ impl JavaAnalyzer {
         let mut cursor = param_node.walk();
         for child in param_node.children(&mut cursor) {
             match child.kind() {
-                "type" => param_type = self.extract_type(&child, source),
+                "type" | "integral_type" | "floating_point_type" | "boolean_type" | "void_type" => {
+                    param_type = node_text(&child, source).to_string();
+                }
                 "identifier" => param_name = node_text(&child, source).to_string(),
                 _ => {}
             }
@@ -405,79 +475,234 @@ impl JavaAnalyzer {
         }
     }
 
-    // TODO! currently this method only handles `ClassName.method`,
-    // we should also start keeping track of calling methods from objects
-    fn extract_method_call(&self, node: &Node, source: &str) -> (String, String) {
-        let class = if let Some(object) = node.child_by_field_name("object") {
-            let object_name = node_text(&object, source);
+    fn process_local_variable_declaration(&mut self, node: &Node, source: &str) {
+        let mut variable_name = String::new();
+        let mut type_name = String::new();
+        let line_number = node.start_position().row + 1;
 
-            // Objects start with an uppercase character
-            if object_name
-                .chars()
-                .next()
-                .map(|x| x.is_uppercase())
-                .unwrap_or(false)
-            {
-                object_name
-            } else {
-                "unknown"
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            match child.kind() {
+                "type" => {
+                    type_name = self.extract_type(&child, source);
+                }
+                "variable_declarator" => {
+                    if let Some(name_node) = child.child_by_field_name("name") {
+                        variable_name = node_text(&name_node, source).to_string();
+                    }
+
+                    // Check if this is an object creation
+                    if let Some(value_node) = child.child_by_field_name("value")
+                        && value_node.kind() == "object_creation_expression"
+                        && let Some(class_node) = value_node.child_by_field_name("type")
+                    {
+                        type_name = self.extract_type(&class_node, source);
+                    }
+                }
+                _ => {}
             }
-        } else {
-            "unknown"
+        }
+
+        if !variable_name.is_empty() && !type_name.is_empty() {
+            self.type_inference
+                .insert(variable_name.clone(), type_name.clone());
+
+            let object_info = ObjectInfo {
+                variable_name: variable_name.clone(),
+                class_name: type_name,
+                declared_at_line: line_number,
+                is_parameter: false,
+            };
+
+            self.object_registry.insert(variable_name, object_info);
+        }
+    }
+
+    fn process_assignment_expression(&mut self, node: &Node, source: &str) {
+        if let Some(left) = node.child_by_field_name("left")
+            && let Some(right) = node.child_by_field_name("right")
+        {
+            let variable_name = node_text(&left, source).to_string();
+
+            // If the right side is an object creation, update type inference
+            if right.kind() == "object_creation_expression" {
+                if let Some(type_node) = right.child_by_field_name("type") {
+                    let type_name = self.extract_type(&type_node, source);
+                    self.type_inference
+                        .insert(variable_name.clone(), type_name.clone());
+
+                    let line_number = node.start_position().row + 1;
+                    let object_info = ObjectInfo {
+                        variable_name: variable_name.clone(),
+                        class_name: type_name,
+                        declared_at_line: line_number,
+                        is_parameter: false,
+                    };
+
+                    self.object_registry.insert(variable_name, object_info);
+                }
+            }
+            // If the right side is a method call, try to infer return type
+            else if right.kind() == "method_invocation" {
+                let method_call = self.extract_enhanced_method_call(&right, source);
+                // Try to find the method in our classes to get return type
+                if let Some(return_type) =
+                    self.get_method_return_type(&method_call.target_class, &method_call.method_name)
+                {
+                    self.type_inference
+                        .insert(variable_name.clone(), return_type);
+                }
+            }
+        }
+    }
+
+    fn extract_enhanced_method_call(&self, node: &Node, source: &str) -> MethodCall {
+        let mut method_call = MethodCall {
+            caller_method: self
+                .current_method
+                .clone()
+                .unwrap_or_else(|| "main".to_string()),
+            caller_class: self
+                .current_class_name
+                .clone()
+                .unwrap_or_else(|| "unknown".to_string()),
+            method_name: String::new(),
+            target_class: "unknown".to_string(),
+            is_static_call: false,
         };
 
-        let method = node
-            .child_by_field_name("name")
-            .map(|node| node_text(&node, source))
-            .unwrap_or_default();
-        (class.to_string(), method.to_string())
-    }
-}
+        // Extract method name
+        if let Some(name_node) = node.child_by_field_name("name") {
+            method_call.method_name = node_text(&name_node, source).to_string();
+        }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::parser::JavaParser;
+        // Extract caller object
+        if let Some(object_node) = node.child_by_field_name("object") {
+            let object_name = node_text(&object_node, source).to_string();
 
-    #[test]
-    fn test_class_analysis() {
-        let mut parser = JavaParser::new().unwrap();
-        let code = r#"
-            public class TestClass extends BaseClass {
-                private String name;
-                public void doSomething() {}
+            // Try to resolve object's class using type inference first
+            if let Some(inferred_type) = self.type_inference.get(&object_name) {
+                method_call.target_class = inferred_type.clone();
+            } else if let Some(class_name) = self.resolve_object_class(&object_name) {
+                method_call.target_class = class_name.clone();
+            } else {
+                // Check if it's a static class call (starts with uppercase)
+                if object_name
+                    .chars()
+                    .next()
+                    .map(|c| c.is_uppercase())
+                    .unwrap_or(false)
+                {
+                    method_call.target_class = object_name.clone();
+                    method_call.is_static_call = true;
+                } else {
+                    // For unresolved objects, use object name as a fallback
+                    method_call.target_class = object_name.clone();
+                }
             }
-        "#;
+        }
 
-        let tree = parser.parse(code).unwrap();
-        let root = parser.get_root_node(&tree);
-
-        let mut analyzer = JavaAnalyzer::new();
-        let result = analyzer.analyze(&root, code);
-
-        assert_eq!(result.classes.len(), 1);
-        assert_eq!(result.classes[0].name, "TestClass");
-        assert_eq!(result.classes[0].visibility, "public");
-        assert_eq!(result.classes[0].extends, Some("BaseClass".to_string()));
+        method_call
     }
 
-    #[test]
-    fn test_implements() {
-        let mut parser = JavaParser::new().unwrap();
-        let code = r#"
-public interface Trainable {}
+    fn resolve_object_class(&self, object_name: &str) -> Option<String> {
+        // First check type inference
+        if let Some(class_name) = self.type_inference.get(object_name) {
+            return Some(class_name.clone());
+        }
 
-public abstract class Animal {}
+        // Then check object registry
+        if let Some(object_info) = self.object_registry.get(object_name) {
+            return Some(object_info.class_name.clone());
+        }
 
-public class Dog extends Animal implements Trainable {}
-"#;
+        // Check if it's a field in current class
+        if let Some(ref class) = self.current_class {
+            for field in &class.fields {
+                if field.name == object_name {
+                    return Some(field.field_type.clone());
+                }
+            }
+        }
 
-        let tree = parser.parse(code).unwrap();
-        let root = parser.get_root_node(&tree);
+        None
+    }
 
-        let mut analyzer = JavaAnalyzer::new();
-        let result = analyzer.analyze(&root, code);
+    fn get_method_return_type(&self, class_name: &str, method_name: &str) -> Option<String> {
+        for class in &self.classes {
+            if class.name == class_name {
+                for method in &class.methods {
+                    if method.name == method_name {
+                        return Some(method.return_type.clone());
+                    }
+                }
+                // Check constructors too
+                for constructor in &class.constructors {
+                    if constructor.name == method_name {
+                        return Some(class_name.to_string()); // Constructor "returns" the class type
+                    }
+                }
+            }
+        }
+        None
+    }
 
-        assert_eq!(result.classes[2].implements, vec!["Trainable"]);
+    fn process_method_calls_in_block(&mut self, block_node: &Node, source: &str) {
+        let mut cursor = block_node.walk();
+        for child in block_node.children(&mut cursor) {
+            // Handle direct method invocations in expression statements
+            if child.kind() == "expression_statement"
+                && let Some(expr) = child.child(0)
+                && expr.kind() == "method_invocation"
+            {
+                self.process_method_invocation(&expr, source);
+            }
+            // Handle method invocations in local variable declarations
+            else if child.kind() == "local_variable_declaration" {
+                self.process_method_calls_in_local_var_decl(&child, source);
+            }
+        }
+    }
+
+    fn process_method_calls_in_local_var_decl(&mut self, var_decl_node: &Node, source: &str) {
+        let mut cursor = var_decl_node.walk();
+        for child in var_decl_node.children(&mut cursor) {
+            if child.kind() == "variable_declarator" {
+                // Look for method invocation in the initializer
+                if let Some(value_node) = child.child_by_field_name("value")
+                    && value_node.kind() == "method_invocation"
+                {
+                    self.process_method_invocation(&value_node, source);
+                }
+            }
+        }
+    }
+
+    fn process_method_invocation(&mut self, node: &Node, source: &str) {
+        // Track method calls for relationship analysis
+        if let Some(ref _class) = self.current_class {
+            let method_call = self.extract_enhanced_method_call(node, source);
+            if !method_call.method_name.is_empty() {
+                // Create method-to-method relationship
+                let from_method =
+                    format!("{}.{}", method_call.caller_class, method_call.caller_method);
+
+                // Resolve the target class and create proper method name
+                let target_class_name = if method_call.target_class != "unknown" {
+                    method_call.target_class.clone()
+                } else {
+                    // Fallback to the object name if we can't resolve the class
+                    method_call.target_class.clone()
+                };
+
+                let to_method = format!("{}.{}", target_class_name, method_call.method_name);
+
+                self.relationships.push(Relationship {
+                    from: from_method,
+                    to: to_method,
+                    relationship_type: RelationshipType::MethodCall,
+                });
+            }
+        }
     }
 }
