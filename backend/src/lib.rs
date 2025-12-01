@@ -3,7 +3,17 @@ mod execution_flow;
 mod no_flow;
 mod parser;
 mod visualizer;
+pub mod model;
+pub mod mistake;
+pub mod compare;
+pub mod api;
+pub mod http_api;
 
+pub use api::compare_from_code_and_student;
+pub use http_api::{CompareRequest, CompareResponse, handle_compare};
+pub use model::{Diagram, Class, Relationship, RelationshipKind};
+pub use mistake::{Mistake, MistakeKind};
+pub use compare::analyze_mistakes;
 use analyzer::JavaAnalyzer;
 use no_flow::GraphGenerator;
 use parser::JavaParser;
