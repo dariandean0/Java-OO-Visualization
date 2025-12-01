@@ -7,9 +7,12 @@ let shapes = [];
 let selectedShape = null;
 let isDragging = false;
 let isDrawing = false;
+let drawingConnection = false;
 let startX, startY;
 let dragOffsetX, dragOffsetY;
 let nextShapeId = 1;
+let hoveredConnectionPoint = null;
+let startConnectionPoint = null;
 
 // Shape class
 class Shape {
@@ -21,13 +24,75 @@ class Shape {
       this.width = width;
       this.height = height;
       this.text = text;
-      this.startX = x;
-      this.startY = y;
-      this.endX = x + width;
-      this.endY = y + height;
       this.strokeColor = '#000000';
       this.fillColor = '#ffffff';
       this.lineWidth = 2;
+      this.lineStyle = 'solid'; // 'solid' or 'dashed'
+      // For connectors (line/arrow)
+      this.startNode = null;
+      this.startPoint = null; // 'north', 'south', 'east', 'west'
+      this.endNode = null;
+      this.endPoint = null;
+   }
+   
+   getConnectionPoints() {
+      if (this.type === 'line' || this.type === 'arrow' || this.type === 'text') {
+         return [];
+      }
+      
+      const centerX = this.x + this.width / 2;
+      const centerY = this.y + this.height / 2;
+      
+      if (this.type === 'circle') {
+         const radius = Math.min(this.width, this.height) / 2;
+         return {
+            north: { x: centerX, y: centerY - radius },
+            south: { x: centerX, y: centerY + radius },
+            east: { x: centerX + radius, y: centerY },
+            west: { x: centerX - radius, y: centerY }
+         };
+      } else {
+         return {
+            north: { x: centerX, y: this.y },
+            south: { x: centerX, y: this.y + this.height },
+            east: { x: this.x + this.width, y: centerY },
+            west: { x: this.x, y: centerY }
+         };
+      }
+   }
+   
+   drawConnectionPoints(highlight = false) {
+      if (this.type === 'line' || this.type === 'arrow' || this.type === 'text') {
+         return;
+      }
+      
+      const points = this.getConnectionPoints();
+      const pointRadius = 5;
+      
+      Object.entries(points).forEach(([direction, point]) => {
+         ctx.beginPath();
+         ctx.arc(point.x, point.y, pointRadius, 0, 2 * Math.PI);
+         
+         if (hoveredConnectionPoint && 
+             hoveredConnectionPoint.shape === this && 
+             hoveredConnectionPoint.point === direction) {
+            ctx.fillStyle = '#0d6efd';
+         } else if (highlight) {
+            ctx.fillStyle = '#6c757d';
+         } else {
+            ctx.fillStyle = '#dee2e6';
+         }
+         
+         ctx.fill();
+         ctx.strokeStyle = '#495057';
+         ctx.lineWidth = 1;
+         ctx.stroke();
+      });
+   }
+   
+   getConnectionCoordinates(point) {
+      const points = this.getConnectionPoints();
+      return points[point] || { x: this.x + this.width/2, y: this.y + this.height/2 };
    }
     
    draw() {
@@ -53,10 +118,7 @@ class Shape {
             ctx.strokeRect(this.x, this.y, this.width, this.height);
             break;
          case 'line':
-            ctx.beginPath();
-            ctx.moveTo(this.startX, this.startY);
-            ctx.lineTo(this.endX, this.endY);
-            ctx.stroke();
+            this.drawLine();
             break;
          case 'arrow':
             this.drawArrow();
@@ -84,32 +146,101 @@ class Shape {
          ctx.textBaseline = 'middle';
          ctx.fillText(this.text, this.x + this.width/2, this.y + this.height/2);
       }
+      
+      // Draw connection points when selected or when drawing connections
+      if (selectedShape === this || (currentTool === 'line' || currentTool === 'arrow')) {
+         this.drawConnectionPoints(selectedShape === this);
+      }
+   }
+   
+   drawLine() {
+      let startX, startY, endX, endY;
+      
+      if (this.startNode && this.startPoint) {
+         const startCoords = this.startNode.getConnectionCoordinates(this.startPoint);
+         startX = startCoords.x;
+         startY = startCoords.y;
+      } else {
+         startX = this.x;
+         startY = this.y;
+      }
+      
+      if (this.endNode && this.endPoint) {
+         const endCoords = this.endNode.getConnectionCoordinates(this.endPoint);
+         endX = endCoords.x;
+         endY = endCoords.y;
+      } else {
+         endX = this.x + this.width;
+         endY = this.y + this.height;
+      }
+      
+      // Apply line style
+      if (this.lineStyle === 'dashed') {
+         ctx.setLineDash([8, 4]);
+      } else {
+         ctx.setLineDash([]);
+      }
+      
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+      
+      ctx.setLineDash([]);
    }
    
    drawArrow() {
+      let startX, startY, endX, endY;
+      
+      if (this.startNode && this.startPoint) {
+         const startCoords = this.startNode.getConnectionCoordinates(this.startPoint);
+         startX = startCoords.x;
+         startY = startCoords.y;
+      } else {
+         startX = this.x;
+         startY = this.y;
+      }
+      
+      if (this.endNode && this.endPoint) {
+         const endCoords = this.endNode.getConnectionCoordinates(this.endPoint);
+         endX = endCoords.x;
+         endY = endCoords.y;
+      } else {
+         endX = this.x + this.width;
+         endY = this.y + this.height;
+      }
+      
       const headLength = 15;
-      const angle = Math.atan2(this.endY - this.startY, this.endX - this.startX);
+      const angle = Math.atan2(endY - startY, endX - startX);
+      
+      // Apply line style
+      if (this.lineStyle === 'dashed') {
+         ctx.setLineDash([8, 4]);
+      } else {
+         ctx.setLineDash([]);
+      }
          
       ctx.beginPath();
-      ctx.moveTo(this.startX, this.startY);
-      ctx.lineTo(this.endX, this.endY);
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(endX, endY);
       ctx.stroke();
+      
+      ctx.setLineDash([]);
          
       ctx.beginPath();
-      ctx.moveTo(this.endX, this.endY);
-      ctx.lineTo(this.endX - headLength * Math.cos(angle - Math.PI / 6),
-                  this.endY - headLength * Math.sin(angle - Math.PI / 6));
-      ctx.lineTo(this.endX - headLength * Math.cos(angle + Math.PI / 6),
-                  this.endY - headLength * Math.sin(angle + Math.PI / 6));
+      ctx.moveTo(endX, endY);
+      ctx.lineTo(endX - headLength * Math.cos(angle - Math.PI / 6),
+                  endY - headLength * Math.sin(angle - Math.PI / 6));
+      ctx.lineTo(endX - headLength * Math.cos(angle + Math.PI / 6),
+                  endY - headLength * Math.sin(angle + Math.PI / 6));
       ctx.closePath();
       ctx.fillStyle = this.strokeColor;
       ctx.fill();
-      }
+   }
     
    contains(x, y) {
       if (this.type === 'line' || this.type === 'arrow') {
-         const distance = this.pointToLineDistance(x, y);
-         return distance < 5;
+         return this.containsLine(x, y);
       } else if (this.type === 'circle') {
          const radius = Math.min(this.width, this.height) / 2;
          const dx = x - (this.x + this.width/2);
@@ -125,17 +256,60 @@ class Shape {
                   y >= this.y && y <= this.y + this.height;
       }
    }
+   
+   containsLine(x, y) {
+      let startX, startY, endX, endY;
+      
+      if (this.startNode && this.startPoint) {
+         const startCoords = this.startNode.getConnectionCoordinates(this.startPoint);
+         startX = startCoords.x;
+         startY = startCoords.y;
+      } else {
+         startX = this.x;
+         startY = this.y;
+      }
+      
+      if (this.endNode && this.endPoint) {
+         const endCoords = this.endNode.getConnectionCoordinates(this.endPoint);
+         endX = endCoords.x;
+         endY = endCoords.y;
+      } else {
+         endX = this.x + this.width;
+         endY = this.y + this.height;
+      }
+      
+      const distance = this.pointToLineDistance(x, y, startX, startY, endX, endY);
+      return distance < 8;
+   }
     
-   pointToLineDistance(px, py) {
-      const dx = this.endX - this.startX;
-      const dy = this.endY - this.startY;
+   pointToLineDistance(px, py, x1, y1, x2, y2) {
+      const dx = x2 - x1;
+      const dy = y2 - y1;
       const length = Math.sqrt(dx*dx + dy*dy);
-      if (length === 0) return Math.sqrt((px-this.startX)**2 + (py-this.startY)**2);
+      if (length === 0) return Math.sqrt((px-x1)**2 + (py-y1)**2);
         
-      const t = Math.max(0, Math.min(1, ((px - this.startX) * dx + (py - this.startY) * dy) / (length * length)));
-      const projX = this.startX + t * dx;
-      const projY = this.startY + t * dy;
+      const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / (length * length)));
+      const projX = x1 + t * dx;
+      const projY = y1 + t * dy;
       return Math.sqrt((px - projX)**2 + (py - projY)**2);
+   }
+   
+   findConnectionPoint(x, y) {
+      if (this.type === 'line' || this.type === 'arrow' || this.type === 'text') {
+         return null;
+      }
+      
+      const points = this.getConnectionPoints();
+      const threshold = 10;
+      
+      for (let [direction, point] of Object.entries(points)) {
+         const dist = Math.sqrt((x - point.x)**2 + (y - point.y)**2);
+         if (dist < threshold) {
+            return direction;
+         }
+      }
+      
+      return null;
    }
 }
 
@@ -170,10 +344,6 @@ function handleMouseDown(e) {
             isDragging = true;
             dragOffsetX = x - selectedShape.x;
             dragOffsetY = y - selectedShape.y;
-            if (selectedShape.type === 'line' || selectedShape.type === 'arrow') {
-               dragOffsetX = x - selectedShape.startX;
-               dragOffsetY = y - selectedShape.startY;
-            }
             updatePropertyEditor();
             redraw();
             return;
@@ -182,6 +352,26 @@ function handleMouseDown(e) {
       selectedShape = null;
       updatePropertyEditor();
       redraw();
+   } else if (currentTool === 'line' || currentTool === 'arrow') {
+      // Check if clicking on a connection point
+      for (let i = shapes.length - 1; i >= 0; i--) {
+         const shape = shapes[i];
+         if (shape.type !== 'line' && shape.type !== 'arrow' && shape.type !== 'text') {
+            const point = shape.findConnectionPoint(x, y);
+            if (point) {
+               drawingConnection = true;
+               startConnectionPoint = { shape: shape, point: point };
+               const coords = shape.getConnectionCoordinates(point);
+               startX = coords.x;
+               startY = coords.y;
+               return;
+            }
+         }
+      }
+      // If not on connection point, start regular drawing
+      isDrawing = true;
+      startX = x;
+      startY = y;
    } else {
       isDrawing = true;
       startX = x;
@@ -193,56 +383,96 @@ function handleMouseMove(e) {
    const rect = canvas.getBoundingClientRect();
    const x = e.clientX - rect.left;
    const y = e.clientY - rect.top;
+   
+   // Update hovered connection point
+   hoveredConnectionPoint = null;
+   if (currentTool === 'line' || currentTool === 'arrow' || currentTool === 'select') {
+      for (let shape of shapes) {
+         if (shape.type !== 'line' && shape.type !== 'arrow' && shape.type !== 'text') {
+            const point = shape.findConnectionPoint(x, y);
+            if (point) {
+               hoveredConnectionPoint = { shape: shape, point: point };
+               canvas.style.cursor = 'crosshair';
+               if (!isDragging && !isDrawing && !drawingConnection) {
+                  redraw();
+               }
+               break;
+            }
+         }
+      }
+      if (!hoveredConnectionPoint && !isDragging && !isDrawing && !drawingConnection) {
+         canvas.style.cursor = currentTool === 'select' ? 'default' : 'crosshair';
+      }
+   }
     
    if (isDragging && selectedShape) {
-      if (selectedShape.type === 'line' || selectedShape.type === 'arrow') {
-         const dx = x - dragOffsetX - selectedShape.startX;
-         const dy = y - dragOffsetY - selectedShape.startY;
-         selectedShape.startX += dx;
-         selectedShape.startY += dy;
-         selectedShape.endX += dx;
-         selectedShape.endY += dy;
-      } else {
+      if (selectedShape.type !== 'line' && selectedShape.type !== 'arrow') {
          selectedShape.x = x - dragOffsetX;
          selectedShape.y = y - dragOffsetY;
       }
       redraw();
-   } else if (isDrawing) {
+   } else if (drawingConnection || isDrawing) {
       redraw();
       ctx.strokeStyle = '#666';
+      ctx.lineWidth = 2;
       ctx.setLineDash([5, 5]);
         
-      const width = x - startX;
-      const height = y - startY;
+      if (drawingConnection || currentTool === 'line' || currentTool === 'arrow') {
+         ctx.beginPath();
+         ctx.moveTo(startX, startY);
+         ctx.lineTo(x, y);
+         ctx.stroke();
+      } else {
+         const width = x - startX;
+         const height = y - startY;
         
-      switch(currentTool) {
-         case 'circle':
-            ctx.beginPath();
-            const radius = Math.min(Math.abs(width), Math.abs(height)) / 2;
-            ctx.arc(startX + width/2, startY + height/2, radius, 0, 2 * Math.PI);
-            ctx.stroke();
-            break;
-         case 'rectangle':
-            ctx.strokeRect(startX, startY, width, height);
-            break;
-         case 'line':
-         case 'arrow':
-            ctx.beginPath();
-            ctx.moveTo(startX, startY);
-            ctx.lineTo(x, y);
-            ctx.stroke();
-            break;
+         switch(currentTool) {
+            case 'circle':
+               ctx.beginPath();
+               const radius = Math.min(Math.abs(width), Math.abs(height)) / 2;
+               ctx.arc(startX + width/2, startY + height/2, radius, 0, 2 * Math.PI);
+               ctx.stroke();
+               break;
+            case 'rectangle':
+               ctx.strokeRect(startX, startY, width, height);
+               break;
+         }
       }
       ctx.setLineDash([]);
    }
 }
 
 function handleMouseUp(e) {
-   if (isDrawing) {
-      const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-        
+   const rect = canvas.getBoundingClientRect();
+   const x = e.clientX - rect.left;
+   const y = e.clientY - rect.top;
+   
+   if (drawingConnection) {
+      // Check if released on a connection point
+      for (let shape of shapes) {
+         if (shape.type !== 'line' && shape.type !== 'arrow' && shape.type !== 'text') {
+            const point = shape.findConnectionPoint(x, y);
+            if (point && shape !== startConnectionPoint.shape) {
+               // Create connected line/arrow
+               const connector = new Shape(currentTool, 0, 0, 0, 0);
+               connector.startNode = startConnectionPoint.shape;
+               connector.startPoint = startConnectionPoint.point;
+               connector.endNode = shape;
+               connector.endPoint = point;
+               shapes.push(connector);
+               drawingConnection = false;
+               startConnectionPoint = null;
+               updateDOTPreview();
+               redraw();
+               return;
+            }
+         }
+      }
+      // If not released on connection point, cancel
+      drawingConnection = false;
+      startConnectionPoint = null;
+      redraw();
+   } else if (isDrawing) {
       const width = x - startX;
       const height = y - startY;
         
@@ -252,12 +482,9 @@ function handleMouseUp(e) {
             shapes.push(new Shape('text', startX, startY, 0, 0, text));
          }
       } else if (currentTool === 'line' || currentTool === 'arrow') {
-         const shape = new Shape(currentTool, 0, 0, 0, 0);
-         shape.startX = startX;
-         shape.startY = startY;
-         shape.endX = x;
-         shape.endY = y;
-         shapes.push(shape);
+         // Create unconnected line/arrow
+         const connector = new Shape(currentTool, startX, startY, x - startX, y - startY);
+         shapes.push(connector);
       } else if (Math.abs(width) > 5 && Math.abs(height) > 5) {
          shapes.push(new Shape(currentTool, 
             Math.min(startX, x), 
@@ -324,6 +551,19 @@ function updatePropertyEditor() {
             <input type="range" class="form-range" id="lineWidth" min="1" max="10" value="${selectedShape.lineWidth}" oninput="document.getElementById('lineWidthValue').textContent=this.value" onchange="updateShapeProperty('lineWidth', parseInt(this.value))">
          </div>
       `;
+      
+      // Add line style for lines and arrows
+      if (selectedShape.type === 'line' || selectedShape.type === 'arrow') {
+         html += `
+            <div class="mb-3">
+               <label for="lineStyle" class="form-label">Line Style</label>
+               <select class="form-select form-select-sm" id="lineStyle" onchange="updateShapeProperty('lineStyle', this.value)">
+                  <option value="solid" ${selectedShape.lineStyle === 'solid' ? 'selected' : ''}>Solid</option>
+                  <option value="dashed" ${selectedShape.lineStyle === 'dashed' ? 'selected' : ''}>Dashed</option>
+               </select>
+            </div>
+         `;
+      }
    }
     
    if (selectedShape.type === 'circle' || selectedShape.type === 'rectangle') {
@@ -395,24 +635,11 @@ function updateDOTPreview() {
     
     // Export edges
     edges.forEach(edge => {
-        let fromNode = null;
-        let toNode = null;
-        
-        nodes.forEach(node => {
-            const centerX = node.x + node.width / 2;
-            const centerY = node.y + node.height / 2;
-            
-            const distStart = Math.sqrt((edge.startX - centerX)**2 + (edge.startY - centerY)**2);
-            const distEnd = Math.sqrt((edge.endX - centerX)**2 + (edge.endY - centerY)**2);
-            
-            if (distStart < 50 && !fromNode) fromNode = node;
-            if (distEnd < 50 && !toNode) toNode = node;
-        });
-        
-        if (fromNode && toNode) {
+        if (edge.startNode && edge.endNode) {
             const edgeOp = edge.type === 'arrow' ? '->' : '--';
             const strokeColor = edge.strokeColor.replace('#', '');
-            dot += `  node${fromNode.id} ${edgeOp} node${toNode.id} [color="#${strokeColor}", penwidth=${edge.lineWidth}];\n`;
+            const styleAttr = edge.lineStyle === 'dashed' ? ', style=dashed' : '';
+            dot += `  node${edge.startNode.id} ${edgeOp} node${edge.endNode.id} [color="#${strokeColor}", penwidth=${edge.lineWidth}${styleAttr}];\n`;
         }
     });
     
@@ -440,26 +667,13 @@ function exportToDOT() {
       
    dot += '\n';
       
-   // Export edges (basic implementation - connects nodes based on proximity)
+   // Export edges
    edges.forEach(edge => {
-      let fromNode = null;
-      let toNode = null;
-         
-      nodes.forEach(node => {
-         const centerX = node.x + node.width / 2;
-         const centerY = node.y + node.height / 2;
-            
-         const distStart = Math.sqrt((edge.startX - centerX)**2 + (edge.startY - centerY)**2);
-         const distEnd = Math.sqrt((edge.endX - centerX)**2 + (edge.endY - centerY)**2);
-            
-         if (distStart < 50 && !fromNode) fromNode = node;
-         if (distEnd < 50 && !toNode) toNode = node;
-      });
-         
-      if (fromNode && toNode) {
+      if (edge.startNode && edge.endNode) {
          const edgeOp = edge.type === 'arrow' ? '->' : '--';
          const strokeColor = edge.strokeColor.replace('#', '');
-         dot += `  node${fromNode.id} ${edgeOp} node${toNode.id} [color="#${strokeColor}", penwidth=${edge.lineWidth}];\n`;
+         const styleAttr = edge.lineStyle === 'dashed' ? ', style=dashed' : '';
+         dot += `  node${edge.startNode.id} ${edgeOp} node${edge.endNode.id} [color="#${strokeColor}", penwidth=${edge.lineWidth}${styleAttr}];\n`;
       }
    });
       
@@ -483,6 +697,7 @@ document.addEventListener('keydown', (e) => {
       selectedShape = null;
       updatePropertyEditor();
       redraw();
+      updateDOTPreview();
    }
 });
 

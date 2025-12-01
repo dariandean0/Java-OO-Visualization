@@ -1,13 +1,18 @@
-mod analyzer;
-mod execution_flow;
-mod no_flow;
-mod parser;
-mod visualizer;
+pub mod analyzer;
+pub mod execution_flow;
+pub mod no_flow;
+pub mod parser;
+pub mod visualizer;
+
 pub mod model;
 pub mod mistake;
 pub mod compare;
 pub mod api;
 pub mod http_api;
+
+
+#[cfg(test)]
+mod tests;
 
 pub use api::compare_from_code_and_student;
 pub use http_api::{CompareRequest, CompareResponse, handle_compare};
@@ -22,14 +27,14 @@ pub fn execution_flow_gen(java_code: &str) -> Vec<String> {
     use execution_flow::{ExecutionAnalyzer, ExecutionGraphGenerator};
 
     let mut parser = JavaParser::new().unwrap();
-    let tree = parser.parse(&java_code).unwrap();
+    let tree = parser.parse(java_code).unwrap();
     let root = parser.get_root_node(&tree);
 
     let mut analyzer = JavaAnalyzer::new();
-    let analysis = analyzer.analyze(&root, &java_code);
+    let analysis = analyzer.analyze(&root, java_code);
 
     let mut exec_analyzer = ExecutionAnalyzer::new(analysis);
-    let flow = exec_analyzer.analyze_execution_flow(&root, &java_code);
+    let flow = exec_analyzer.analyze_execution_flow(&root, java_code);
 
     let generator = ExecutionGraphGenerator::new();
     let graphs = generator.generate_execution_graphs(&flow);
@@ -39,11 +44,11 @@ pub fn execution_flow_gen(java_code: &str) -> Vec<String> {
 
 pub fn no_flow_gen(java_code: &str) -> String {
     let mut parser = JavaParser::new().unwrap();
-    let tree = parser.parse(&java_code).unwrap();
+    let tree = parser.parse(java_code).unwrap();
     let root = parser.get_root_node(&tree);
 
     let mut analyzer = JavaAnalyzer::new();
-    let analysis = analyzer.analyze(&root, &java_code);
+    let analysis = analyzer.analyze(&root, java_code);
 
     let generator = GraphGenerator::new();
     generator.generate_dot(&analysis)
@@ -75,19 +80,15 @@ pub fn wasm_visualize_java_code(java_code: &str) -> String {
 //emscripten compatible exports
 use std::ffi::CString;
 use std::os::raw::c_char;
-use std::slice;
 use std::str;
 
-fn ptr_to_str<'a>(ptr: *const u8, len: usize) -> &'a str {
-    let bytes = unsafe { slice::from_raw_parts(ptr, len) };
-    str::from_utf8(bytes).unwrap_or("")
-}
 fn to_c_string(s: String) -> *mut c_char {
     CString::new(s).unwrap().into_raw()
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn wasm_execution_flow_gen(ptr: *const c_char) -> *mut c_char {
+#[allow(clippy::missing_safety_doc)]
+pub unsafe extern "C" fn wasm_execution_flow_gen(ptr: *const c_char) -> *mut c_char {
     let c_str = unsafe { std::ffi::CStr::from_ptr(ptr) };
     let java_code = c_str.to_str().unwrap_or("");
     let vec = execution_flow_gen(java_code);
@@ -96,7 +97,8 @@ pub extern "C" fn wasm_execution_flow_gen(ptr: *const c_char) -> *mut c_char {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn wasm_no_flow_gen(ptr: *const c_char) -> *mut c_char {
+#[allow(clippy::missing_safety_doc)]
+pub unsafe extern "C" fn wasm_no_flow_gen(ptr: *const c_char) -> *mut c_char {
     let c_str = unsafe { std::ffi::CStr::from_ptr(ptr) };
     let java_code = c_str.to_str().unwrap_or("");
     let result = no_flow_gen(java_code);
@@ -104,7 +106,8 @@ pub extern "C" fn wasm_no_flow_gen(ptr: *const c_char) -> *mut c_char {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn wasm_visualize_java_code(ptr: *const c_char) -> *mut c_char {
+#[allow(clippy::missing_safety_doc)]
+pub unsafe extern "C" fn wasm_visualize_java_code(ptr: *const c_char) -> *mut c_char {
     //let java_code = ptr_to_str(ptr, len);
 
     let c_str = unsafe { std::ffi::CStr::from_ptr(ptr) };
