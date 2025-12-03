@@ -117,8 +117,10 @@
                         <button id="VisualizerB" type="button" onclick="goTo('Visualizer')" class="btn btn-primary me-2 pagebutton">Main Visualizer</button>
                         <button id="CreatorB" type="button" onclick="goTo('Creator')" class="btn btn-outline-primary me-2 pagebutton">Diagram Creator</button>
                         <button id="ComparerB" type="button" onclick="goTo('Comparer')" class="btn btn-outline-primary pagebutton">Diagram Comparer</button>
+                        
                     </form>
                 </ul>
+                <button id="Export" type="button" onclick="exp()" class="btn btn-outline-success pagebutton ms-auto">Share</button>
             </div>
         </nav>
         <!--Pages-->
@@ -135,6 +137,18 @@
                         pb.classList.add('btn-primary');
                     }
                 });
+            }
+            function encodeCode(code) {
+                return encodeURIComponent(pako.deflate(code).toBase64({ alphabet: "base64", omitPadding: true }))
+            }
+            function decodeCode(code) {
+                return pako.inflate(Uint8Array.fromBase64(decodeURIComponent(code)), { to: "string" })
+            }
+            function exp() {
+                var code = encodeCode(getEditorContent())
+                var url = location.origin + location.pathname + "?code=" + code
+                navigator.clipboard.writeText(url)
+                alert("Copied URL!")
             }
         </script>
 
@@ -411,11 +425,23 @@
   </div>
 </div>
 
-        
+        <!--Pako-->
+        <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+
         <!--Diagram Creator Script-->
         <script src="diagram-creator.js"></script>
 
-	<script src="diagram-comparer.js"></script>
+	    <script src="diagram-comparer.js"></script>
+
+        <!--At end so it runs once everything is loaded-->
+        <script>
+            // update from URL input
+            const urlParams = new URLSearchParams(window.location.search)
+            const codeParam = urlParams.get('code')
+            if (codeParam) {
+                EDITOR.setValue(decodeCode(codeParam))
+            }
+        </script>
         
         <!--Bootstrap-->
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
