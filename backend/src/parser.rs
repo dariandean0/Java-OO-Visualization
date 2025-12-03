@@ -46,16 +46,16 @@ where
 }
 
 #[cfg(test)]
-mod tests {
+mod parser_tests {
     use super::*;
 
     #[test]
-    fn test_parser_creation() {
+    fn parser_creation() {
         assert!(JavaParser::new().is_ok());
     }
 
     #[test]
-    fn test_simple_java_parsing() {
+    fn simple_java_parsing() {
         let mut parser = JavaParser::new().unwrap();
         let code = "public class Test {}";
         let tree = parser.parse(code).unwrap();

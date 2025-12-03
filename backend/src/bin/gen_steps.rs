@@ -4,7 +4,7 @@ use std::io::Write;
 fn main() {
     let files = std::env::args()
         .skip(1)
-        .map(|x| std::fs::read_to_string(x))
+        .map(std::fs::read_to_string)
         .collect::<Result<Vec<String>, _>>()
         .expect("no work");
     let java_code = files

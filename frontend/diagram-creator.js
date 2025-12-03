@@ -611,6 +611,7 @@ function clearCanvas() {
 }
 
 function updateDOTPreview() {
+	console.log("Shapes array:", shapes);
     const previewDiv = document.getElementById('dotPreview');
     if (!previewDiv) return;
     
@@ -690,7 +691,6 @@ function exportToDOT() {
    console.log('Exported DOT:\n', dot);
 }
 
-// Handle delete key
 document.addEventListener('keydown', (e) => {
    if (e.key === 'Backspace' && selectedShape) {
       shapes = shapes.filter(s => s !== selectedShape);
@@ -700,3 +700,54 @@ document.addEventListener('keydown', (e) => {
       updateDOTPreview();
    }
 });
+
+
+// Expose the current Diagriam from creator to comparer tab.
+window.getCurrentDiagram = function () {
+  const nodes = shapes.filter(s => s.type === 'circle' || s.type === 'rect');
+  const edges = shapes.filter(s => s.type === 'arrow' || s.type === 'line');
+
+  const classes = [];
+  const relationships = [];
+
+  nodes.forEach(shape => {
+    const label = shape.text || `node${shape.id}`;
+    classes.push({ name: label });
+  });
+
+  edges.forEach(edge => {
+    let fromNode = null;
+    let toNode = null;
+
+    // find closet nodes
+    nodes.forEach(node => {
+      const centerX = node.x + node.width / 2;
+      const centerY = node.y + node.height / 2;
+
+      const distStart = Math.sqrt(
+        (edge.startX - centerX) ** 2 + (edge.startY - centerY) ** 2
+      );
+      const distEnd = Math.sqrt(
+        (edge.endX - centerX) ** 2 + (edge.endY - centerY) ** 2
+      );
+
+      if (distStart < 50 && !fromNode) fromNode = node;
+      if (distEnd < 50 && !toNode) toNode = node;
+    });
+
+    if (fromNode && toNode) {
+      const fromLabel = fromNode.text || `node${fromNode.id}`;
+      const toLabel = toNode.text || `node${toNode.id}`;
+
+      relationships.push({
+        from: fromLabel,
+        to: toLabel,
+        kind: "Association",
+      });
+    }
+  });
+  return {
+    classes,
+    relationships,
+  };
+};

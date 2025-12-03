@@ -117,8 +117,10 @@
                         <button id="VisualizerB" type="button" onclick="goTo('Visualizer')" class="btn btn-primary me-2 pagebutton">Main Visualizer</button>
                         <button id="CreatorB" type="button" onclick="goTo('Creator')" class="btn btn-outline-primary me-2 pagebutton">Diagram Creator</button>
                         <button id="ComparerB" type="button" onclick="goTo('Comparer')" class="btn btn-outline-primary pagebutton">Diagram Comparer</button>
+                        
                     </form>
                 </ul>
+                <button id="Export" type="button" onclick="exp()" class="btn btn-outline-success pagebutton ms-auto">Share</button>
             </div>
         </nav>
         <!--Pages-->
@@ -135,6 +137,18 @@
                         pb.classList.add('btn-primary');
                     }
                 });
+            }
+            function encodeCode(code) {
+                return encodeURIComponent(pako.deflate(code).toBase64({ alphabet: "base64", omitPadding: true }))
+            }
+            function decodeCode(code) {
+                return pako.inflate(Uint8Array.fromBase64(decodeURIComponent(code)), { to: "string" })
+            }
+            function exp() {
+                var code = encodeCode(getEditorContent())
+                var url = location.origin + location.pathname + "?code=" + code
+                navigator.clipboard.writeText(url)
+                alert("Copied URL!")
             }
         </script>
 
@@ -324,12 +338,110 @@
             </div>
         </div>
         
-        <div id="Comparer" class="page">
-            <h1>Diagram Comparer</h1>
-        </div>
-        
+        <div id="diagram-comparer-view" class="view">
+  <div style="padding: 8px 12px; font-weight: bold; font-size: 20px;">
+    Diagram Comparer
+  </div>
+
+  <div
+    style="
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 12px;
+      padding: 12px;
+      height: calc(100% - 40px);
+      box-sizing: border-box;
+    "
+  >
+    <!-- Left: Java code + controls -->
+    <div style="display: flex; flex-direction: column;">
+      <label style="font-weight: bold; margin-bottom: 4px;">
+        Java Code
+      </label>
+      <textarea
+        id="dc-source-code"
+        placeholder="Paste the Java code you want to check against the diagram..."
+        style="
+          flex: 1;
+          width: 100%;
+          resize: none;
+          font-family: monospace;
+          font-size: 14px;
+          padding: 8px;
+          border-radius: 4px;
+          border: 1px solid #ccc;
+          box-sizing: border-box;
+        "
+      ></textarea>
+
+      <div style="margin-top: 8px; display: flex; gap: 8px; align-items: center;">
+        <button
+          id="dc-check-button"
+          style="
+            padding: 6px 12px;
+            border-radius: 4px;
+            border: none;
+            background-color: #2563eb;
+            color: white;
+            cursor: pointer;
+          "
+        >
+          Check Diagram
+        </button>
+
+       
+      </div>
+
+      <div
+        id="dc-error"
+        style="margin-top: 8px; color: red; font-size: 13px; display: none;"
+      ></div>
+    </div>
+
+    <!-- Right: Mistakes list -->
+    <div
+      style="
+        display: flex;
+        flex-direction: column;
+        border-left: 1px solid #ddd;
+        padding-left: 12px;
+        overflow-y: auto;
+      "
+    >
+      <div style="font-weight: bold; margin-bottom: 4px;">Mistakes</div>
+
+      <div
+        id="dc-no-mistakes"
+        style="font-size: 13px; color: #666;"
+      >
+        No mistakes to show yet. Enter code and click <strong>Check Diagram</strong>.
+      </div>
+
+      <ul
+        id="dc-mistake-list"
+        style="margin-top: 4px; padding-left: 18px;"
+      ></ul>
+    </div>
+  </div>
+</div>
+
+        <!--Pako-->
+        <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+
         <!--Diagram Creator Script-->
         <script src="diagram-creator.js"></script>
+
+	    <script src="diagram-comparer.js"></script>
+
+        <!--At end so it runs once everything is loaded-->
+        <script>
+            // update from URL input
+            const urlParams = new URLSearchParams(window.location.search)
+            const codeParam = urlParams.get('code')
+            if (codeParam) {
+                EDITOR.setValue(decodeCode(codeParam))
+            }
+        </script>
         
         <!--Bootstrap-->
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
