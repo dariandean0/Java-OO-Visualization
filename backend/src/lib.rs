@@ -4,42 +4,32 @@ pub mod no_flow;
 pub mod parser;
 pub mod visualizer;
 
-pub mod model;
-pub mod mistake;
-pub mod compare;
 pub mod api;
+pub mod compare;
 pub mod http_api;
-
+pub mod mistake;
+pub mod model;
 
 #[cfg(test)]
 mod tests;
 
-pub use api::compare_from_code_and_student;
-pub use http_api::{CompareRequest, CompareResponse, handle_compare};
-pub use model::{Diagram, Class, Relationship, RelationshipKind};
-pub use mistake::{Mistake, MistakeKind};
-pub use compare::analyze_mistakes;
 use analyzer::JavaAnalyzer;
+pub use api::compare_from_code_and_student;
+pub use compare::analyze_mistakes;
+pub use http_api::{CompareRequest, CompareResponse, handle_compare};
+pub use mistake::{Mistake, MistakeKind};
+pub use model::{Class, Diagram, Relationship, RelationshipKind};
 use no_flow::GraphGenerator;
 use parser::JavaParser;
 //use wasm_bindgen::prelude::*;
 pub fn execution_flow_gen(java_code: &str) -> Vec<String> {
-    use execution_flow::{ExecutionAnalyzer, ExecutionGraphGenerator};
-
-    let mut parser = JavaParser::new().unwrap();
-    let tree = parser.parse(java_code).unwrap();
-    let root = parser.get_root_node(&tree);
-
-    let mut analyzer = JavaAnalyzer::new();
-    let analysis = analyzer.analyze(&root, java_code);
-
-    let mut exec_analyzer = ExecutionAnalyzer::new(analysis);
-    let flow = exec_analyzer.analyze_execution_flow(&root, java_code);
-
-    let generator = ExecutionGraphGenerator::new();
-    let graphs = generator.generate_execution_graphs(&flow);
-
-    graphs.into_iter().map(|g| g.dot_code).collect()
+    let mut visualizer = visualizer::JavaVisualizer::new().unwrap();
+    let result = visualizer.analyze_execution_flow(java_code).unwrap();
+    result
+        .execution_graphs
+        .into_iter()
+        .map(|g| g.dot_code)
+        .collect()
 }
 
 pub fn no_flow_gen(java_code: &str) -> String {

@@ -1,7 +1,7 @@
-use axum::{routing::post, Json, Router};
+use axum::{Json, Router, routing::post};
 use backend::{CompareRequest, CompareResponse, handle_compare};
-use tower_http::cors::{Any, CorsLayer};
 use tokio::net::TcpListener;
+use tower_http::cors::{Any, CorsLayer};
 
 #[tokio::main]
 async fn main() {
@@ -27,4 +27,3 @@ async fn compare_endpoint(Json(req): Json<CompareRequest>) -> Json<CompareRespon
     let resp = handle_compare(req);
     Json(resp)
 }
-

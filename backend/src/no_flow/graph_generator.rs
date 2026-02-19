@@ -63,22 +63,32 @@ impl GraphGenerator {
         dot.push_str("    node [fontname=\"Arial\"];\n");
         dot.push_str("    edge [fontname=\"Arial\", fontsize=10];\n\n");
 
-        // Generate class subgraphs
-        for class in &analysis.classes {
-            dot.push_str(&self.generate_class_subgraph(class, analysis));
-            dot.push('\n');
-        }
-
-        // Generate inter-class relationships
-        if self.config.include_relationships {
-            dot.push_str(&self.generate_inter_class_relationships(analysis));
-        }
+        dot.push_str(&self.generate_dot_body(analysis));
 
         dot.push_str("}\n");
         dot
     }
 
-    fn generate_class_subgraph(&self, class: &JavaClass, _analysis: &AnalysisResult) -> String {
+    pub(crate) fn generate_dot_body(&self, analysis: &AnalysisResult) -> String {
+        let mut body = String::new();
+
+        for class in &analysis.classes {
+            body.push_str(&self.generate_class_subgraph(class, analysis));
+            body.push('\n');
+        }
+
+        if self.config.include_relationships {
+            body.push_str(&self.generate_inter_class_relationships(analysis));
+        }
+
+        body
+    }
+
+    pub(crate) fn generate_class_subgraph(
+        &self,
+        class: &JavaClass,
+        _analysis: &AnalysisResult,
+    ) -> String {
         let mut subgraph = String::new();
         let safe_class_name = class.name.replace('.', "_");
 
@@ -161,7 +171,7 @@ impl GraphGenerator {
         subgraph
     }
 
-    fn get_class_label(&self, class: &JavaClass) -> String {
+    pub(crate) fn get_class_label(&self, class: &JavaClass) -> String {
         if class.is_interface {
             format!("{} (interface)", class.name)
         } else if class.is_abstract {
@@ -171,7 +181,7 @@ impl GraphGenerator {
         }
     }
 
-    fn generate_field_node(&self, field: &JavaField, class_name: &str) -> String {
+    pub(crate) fn generate_field_node(&self, field: &JavaField, class_name: &str) -> String {
         let field_id = format!("{}_{}", class_name, field.name);
         let label = self.format_field(field);
 
@@ -181,7 +191,7 @@ impl GraphGenerator {
         )
     }
 
-    fn generate_method_node(&self, method: &JavaMethod, class_name: &str) -> String {
+    pub(crate) fn generate_method_node(&self, method: &JavaMethod, class_name: &str) -> String {
         let method_id = format!("{}_{}", class_name, method.name);
         let label = self.format_method(method);
 
@@ -198,7 +208,11 @@ impl GraphGenerator {
         )
     }
 
-    fn generate_internal_connections(&self, class: &JavaClass, class_name: &str) -> String {
+    pub(crate) fn generate_internal_connections(
+        &self,
+        class: &JavaClass,
+        class_name: &str,
+    ) -> String {
         let mut connections = String::new();
 
         // Connect class to its fields and methods
@@ -229,7 +243,7 @@ impl GraphGenerator {
         connections
     }
 
-    fn generate_inter_class_relationships(&self, analysis: &AnalysisResult) -> String {
+    pub(crate) fn generate_inter_class_relationships(&self, analysis: &AnalysisResult) -> String {
         let mut relationships = String::new();
 
         for relationship in &analysis.relationships {
@@ -251,7 +265,7 @@ impl GraphGenerator {
                 RelationshipType::Calls => {
                     if self.config.show_method_calls {
                         relationships
-                            .push_str(&self.generate_legacy_method_call_relationship(relationship));
+                            .push_str(&self.generate_method_call_relationship(relationship));
                     }
                 }
                 RelationshipType::MethodCall => {
@@ -279,22 +293,11 @@ impl GraphGenerator {
         )
     }
 
-    fn generate_legacy_method_call_relationship(&self, relationship: &Relationship) -> String {
-        // For legacy method calls (class-to-class)
-        let from_clean = relationship.from.replace('.', "_");
-        let to_clean = relationship.to.replace('.', "_");
-
-        format!(
-            "    \"{}\" -> \"{}\" [arrowhead=normal, style=solid, color=blue];\n",
-            from_clean, to_clean
-        )
-    }
-
-    fn format_field(&self, field: &JavaField) -> String {
-        let visibility = if field.visibility == "package" {
-            ""
+    pub(crate) fn format_field(&self, field: &JavaField) -> String {
+        let vis_prefix = if field.visibility == "package" || field.visibility.is_empty() {
+            String::new()
         } else {
-            &field.visibility
+            format!("{} ", field.visibility)
         };
         let static_modifier = if field.is_static { "static " } else { "" };
         let final_modifier = if field.is_final { "final " } else { "" };
@@ -307,15 +310,15 @@ impl GraphGenerator {
 
         format!(
             "{}{}{}{}{}",
-            visibility, static_modifier, final_modifier, type_str, field.name
+            vis_prefix, static_modifier, final_modifier, type_str, field.name
         )
     }
 
-    fn format_method(&self, method: &JavaMethod) -> String {
-        let visibility = if method.visibility == "package" {
-            ""
+    pub(crate) fn format_method(&self, method: &JavaMethod) -> String {
+        let vis_prefix = if method.visibility == "package" || method.visibility.is_empty() {
+            String::new()
         } else {
-            &method.visibility
+            format!("{} ", method.visibility)
         };
         let static_modifier = if method.is_static { "static " } else { "" };
         let abstract_modifier = if method.is_abstract { "abstract " } else { "" };
@@ -339,12 +342,12 @@ impl GraphGenerator {
 
         format!(
             "{}{}{}{}{}: {}",
-            visibility, static_modifier, abstract_modifier, method.name, params, method.return_type
+            vis_prefix, static_modifier, abstract_modifier, method.name, params, method.return_type
         )
     }
 
     #[allow(dead_code)]
-    fn format_constructor(&self, constructor: &JavaMethod) -> String {
+    pub(crate) fn format_constructor(&self, constructor: &JavaMethod) -> String {
         let visibility = if constructor.visibility == "package" {
             ""
         } else {
@@ -369,10 +372,5 @@ impl GraphGenerator {
         };
 
         format!("{}{}", visibility, params)
-    }
-
-    #[allow(dead_code)]
-    fn escape_label(&self, label: &str) -> String {
-        label.replace('"', "\\\"")
     }
 }

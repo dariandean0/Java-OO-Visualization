@@ -121,7 +121,8 @@ impl JavaVisualizer {
 
         // Generate step-by-step execution graphs
         let graph_generator = ExecutionGraphGenerator::new();
-        let execution_graphs = graph_generator.generate_execution_graphs(&execution_flow);
+        let execution_graphs =
+            graph_generator.generate_execution_graphs(&execution_flow, &static_analysis);
 
         Ok(ExecutionVisualizationResult {
             execution_flow,
@@ -150,7 +151,8 @@ impl JavaVisualizer {
 
         // Generate step-by-step execution graphs with custom config
         let graph_generator = ExecutionGraphGenerator::with_config(execution_config);
-        let execution_graphs = graph_generator.generate_execution_graphs(&execution_flow);
+        let execution_graphs =
+            graph_generator.generate_execution_graphs(&execution_flow, &static_analysis);
 
         Ok(ExecutionVisualizationResult {
             execution_flow,

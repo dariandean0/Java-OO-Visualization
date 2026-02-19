@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::model::{Diagram, Relationship};
 use crate::mistake::{Mistake, MistakeKind};
+use crate::model::{Diagram, Relationship};
 
 /// Compare the correct diagram and the student drawn diagran.
 /// and return a list of mistakes found in the student diagram.
@@ -56,17 +56,9 @@ fn key(rel: &Relationship) -> (String, String) {
 }
 
 fn compare_relationships(correct: &Diagram, student: &Diagram, mistakes: &mut Vec<Mistake>) {
-    let correct_map: HashMap<_, _> = correct
-        .relationships
-        .iter()
-        .map(|r| (key(r), r))
-        .collect();
+    let correct_map: HashMap<_, _> = correct.relationships.iter().map(|r| (key(r), r)).collect();
 
-    let student_map: HashMap<_, _> = student
-        .relationships
-        .iter()
-        .map(|r| (key(r), r))
-        .collect();
+    let student_map: HashMap<_, _> = student.relationships.iter().map(|r| (key(r), r)).collect();
 
     for (k, rel) in &correct_map {
         if !student_map.contains_key(k) {
@@ -95,17 +87,17 @@ fn compare_relationships(correct: &Diagram, student: &Diagram, mistakes: &mut Ve
     }
 
     for (k, correct_rel) in &correct_map {
-        if let Some(student_rel) = student_map.get(k) {
-            if correct_rel.kind != student_rel.kind {
-                mistakes.push(Mistake {
-                    kind: MistakeKind::WrongRelationshipType,
-                    message: format!(
-                        "Relationship between '{}' and '{}' should be {:?}, not {:?}.",
-                        correct_rel.from, correct_rel.to, correct_rel.kind, student_rel.kind
-                    ),
-                    related_elements: vec![correct_rel.from.clone(), correct_rel.to.clone()],
-                });
-            }
+        if let Some(student_rel) = student_map.get(k)
+            && correct_rel.kind != student_rel.kind
+        {
+            mistakes.push(Mistake {
+                kind: MistakeKind::WrongRelationshipType,
+                message: format!(
+                    "Relationship between '{}' and '{}' should be {:?}, not {:?}.",
+                    correct_rel.from, correct_rel.to, correct_rel.kind, student_rel.kind
+                ),
+                related_elements: vec![correct_rel.from.clone(), correct_rel.to.clone()],
+            });
         }
     }
 }
