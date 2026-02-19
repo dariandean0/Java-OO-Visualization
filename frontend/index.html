@@ -22,39 +22,59 @@
                 display: block;
             }
             
+            /* ── Tool buttons ── */
             .tool-button {
-                width: 60px;
-                height: 60px;
-                margin: 5px;
+                width: 100%;
+                height: 40px;
+                margin-bottom: 3px;
                 border: 2px solid #dee2e6;
                 background-color: white;
                 cursor: pointer;
                 display: flex;
                 align-items: center;
-                justify-content: center;
+                gap: 7px;
+                padding: 0 8px;
                 transition: all 0.2s;
                 border-radius: 4px;
+                font-size: 12px;
+                text-align: left;
+                white-space: nowrap;
+                overflow: hidden;
             }
-            
+
             .tool-button:hover {
                 background-color: #e9ecef;
                 border-color: #0d6efd;
             }
-            
+
             .tool-button.active {
                 background-color: #0d6efd;
                 border-color: #0d6efd;
                 color: white;
             }
-            
+
+            .tool-section-label {
+                font-size: 9px;
+                font-weight: 700;
+                color: #6c757d;
+                text-transform: uppercase;
+                letter-spacing: 0.06em;
+                padding: 6px 2px 2px;
+                margin-top: 4px;
+                border-bottom: 1px solid #dee2e6;
+                margin-bottom: 3px;
+            }
+
             .left-toolbar {
                 background-color: #f8f9fa;
-                padding: 10px;
+                padding: 8px;
                 border-right: 2px solid #dee2e6;
                 height: 94vh;
+                width: 155px;
+                min-width: 155px;
                 display: flex;
                 flex-direction: column;
-                align-items: center;
+                overflow-y: auto;
             }
             
             .canvas-container {
@@ -261,53 +281,109 @@
                 <div class="row g-0">
                     <!-- Left Toolbar -->
                     <div class="col-auto left-toolbar">
-                        <div class="d-flex flex-column">
-                            <button class="tool-button active" data-tool="select" title="Select">
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                                    <path d="M3 3l7.5 18 3-7 7-3L3 3z"/>
+                        <div class="d-flex flex-column w-100">
+
+                            <!-- ── Tools ── -->
+                            <div class="tool-section-label">Tools</div>
+                            <button class="tool-button active" data-tool="select" title="Select / Move">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M4 2l17 10-7 2-3 7z"/>
                                 </svg>
+                                Select
                             </button>
-                            <button class="tool-button" data-tool="circle" title="Circle">
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <circle cx="12" cy="12" r="9"/>
+
+                            <!-- ── Nodes ── -->
+                            <div class="tool-section-label">Nodes</div>
+
+                            <button class="tool-button" data-tool="class" title="Class — drag to size, double-click to name">
+                                <!-- rect with header bar -->
+                                <svg width="22" height="16" viewBox="0 0 22 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                                    <rect x="1" y="1" width="20" height="14" rx="1" fill="#f0f0f0"/>
+                                    <rect x="1" y="1" width="20" height="5" rx="1" fill="#add8e6"/>
+                                    <line x1="1" y1="6" x2="21" y2="6"/>
                                 </svg>
+                                Class
                             </button>
-                            <button class="tool-button" data-tool="rectangle" title="Rectangle">
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <rect x="3" y="5" width="18" height="14" rx="2"/>
+
+                            <button class="tool-button" data-tool="interface" title="Interface — drag to size, double-click to name">
+                                <svg width="22" height="16" viewBox="0 0 22 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3,2">
+                                    <rect x="1" y="1" width="20" height="14" rx="1" fill="#f5f8ff"/>
+                                    <rect x="1" y="1" width="20" height="5" rx="1" fill="#c4deff"/>
+                                    <line x1="1" y1="6" x2="21" y2="6" stroke-dasharray="none"/>
                                 </svg>
+                                Interface
                             </button>
-                            <button class="tool-button" data-tool="line" title="Line">
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <line x1="5" y1="19" x2="19" y2="5"/>
+
+                            <button class="tool-button" data-tool="field" title="Field node — draw INSIDE a class box">
+                                <!-- note shape -->
+                                <svg width="22" height="14" viewBox="0 0 22 14" fill="#ffffe0" stroke="currentColor" stroke-width="1.5">
+                                    <path d="M1 1h17l3 3v9H1z"/>
+                                    <path d="M18 1v3h3" fill="none"/>
                                 </svg>
+                                Field
                             </button>
-                            <button class="tool-button" data-tool="arrow" title="Arrow">
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <line x1="5" y1="12" x2="19" y2="12"/>
-                                    <polyline points="12,5 19,12 12,19"/>
+
+                            <button class="tool-button" data-tool="method-public" title="Public method — draw INSIDE a class box">
+                                <!-- component shape, green -->
+                                <svg width="22" height="14" viewBox="0 0 22 14" fill="#90ee90" stroke="currentColor" stroke-width="1.5">
+                                    <rect x="4" y="1" width="17" height="12" rx="1"/>
+                                    <rect x="1" y="3" width="3" height="3" fill="#90ee90"/>
+                                    <rect x="1" y="8" width="3" height="3" fill="#90ee90"/>
                                 </svg>
+                                Public Method
                             </button>
-                            <button class="tool-button" data-tool="text" title="Text">
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                                    <path d="M5 4v3h5.5v12h3V7H19V4z"/>
+
+                            <button class="tool-button" data-tool="method-private" title="Private method — draw INSIDE a class box">
+                                <svg width="22" height="14" viewBox="0 0 22 14" fill="#f08080" stroke="currentColor" stroke-width="1.5">
+                                    <rect x="4" y="1" width="17" height="12" rx="1"/>
+                                    <rect x="1" y="3" width="3" height="3" fill="#f08080"/>
+                                    <rect x="1" y="8" width="3" height="3" fill="#f08080"/>
                                 </svg>
+                                Private Method
                             </button>
-                            <div class="mt-4 d-flex flex-column gap-2">
-                                <button class="btn btn-sm btn-danger" onclick="clearCanvas()" title="Clear Canvas">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <line x1="18" y1="6" x2="6" y2="18"></line>
-                                        <line x1="6" y1="6" x2="18" y2="18"></line>
-                                    </svg>
-                                </button>
-                                <button class="btn btn-sm btn-success" onclick="exportToDOT()" title="Export to DOT">
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                        <polyline points="7 10 12 15 17 10"></polyline>
-                                        <line x1="12" y1="15" x2="12" y2="3"></line>
-                                    </svg>
-                                </button>
-                            </div>
+
+                            <button class="tool-button" data-tool="method-protected" title="Protected method — draw INSIDE a class box">
+                                <svg width="22" height="14" viewBox="0 0 22 14" fill="#d3d3d3" stroke="currentColor" stroke-width="1.5">
+                                    <rect x="4" y="1" width="17" height="12" rx="1"/>
+                                    <rect x="1" y="3" width="3" height="3" fill="#d3d3d3"/>
+                                    <rect x="1" y="8" width="3" height="3" fill="#d3d3d3"/>
+                                </svg>
+                                Protected Method
+                            </button>
+
+                            <!-- ── Connections ── -->
+                            <div class="tool-section-label">Connections</div>
+
+                            <button class="tool-button" data-tool="extends" title="Extends — solid line, hollow arrowhead">
+                                <!-- solid line + hollow triangle -->
+                                <svg width="28" height="12" viewBox="0 0 28 12">
+                                    <line x1="0" y1="6" x2="18" y2="6" stroke="currentColor" stroke-width="2"/>
+                                    <polygon points="18,2 28,6 18,10" fill="white" stroke="currentColor" stroke-width="1.5"/>
+                                </svg>
+                                Extends
+                            </button>
+
+                            <button class="tool-button" data-tool="implements" title="Implements — dashed line, hollow arrowhead">
+                                <svg width="28" height="12" viewBox="0 0 28 12">
+                                    <line x1="0" y1="6" x2="18" y2="6" stroke="currentColor" stroke-width="2" stroke-dasharray="4,3"/>
+                                    <polygon points="18,2 28,6 18,10" fill="white" stroke="currentColor" stroke-width="1.5"/>
+                                </svg>
+                                Implements
+                            </button>
+
+                            <button class="tool-button" data-tool="calls" title="Method call — solid blue arrow">
+                                <svg width="28" height="12" viewBox="0 0 28 12">
+                                    <line x1="0" y1="6" x2="18" y2="6" stroke="#0000cd" stroke-width="2"/>
+                                    <polygon points="18,2 28,6 18,10" fill="#0000cd" stroke="#0000cd"/>
+                                </svg>
+                                Method Call
+                            </button>
+
+                            <!-- ── Actions ── -->
+                            <div class="tool-section-label" style="margin-top:auto;">Actions</div>
+                            <button class="btn btn-sm btn-danger w-100 mb-1" onclick="clearCanvas()">Clear Canvas</button>
+                            <button class="btn btn-sm btn-success w-100" onclick="exportToDOT()">Export DOT</button>
+
                         </div>
                     </div>
                     
