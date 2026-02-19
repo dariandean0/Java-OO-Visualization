@@ -1,4 +1,3 @@
-// Diagram Creator Logic
 const canvas = document.getElementById('diagramCanvas');
 const ctx = canvas ? canvas.getContext('2d') : null;
 
@@ -14,740 +13,785 @@ let nextShapeId = 1;
 let hoveredConnectionPoint = null;
 let startConnectionPoint = null;
 
-// Shape class
+// Shape role groups
+const NODE_SHAPES      = ['class', 'interface', 'field', 'method-public', 'method-private', 'method-protected'];
+const CONNECTOR_SHAPES = ['extends', 'implements', 'calls'];
+
+function isNodeShape(type)      { return NODE_SHAPES.includes(type); }
+function isConnectorShape(type) { return CONNECTOR_SHAPES.includes(type); }
+
+// ── Shape class ───────────────────────────────────────────────
 class Shape {
-   constructor(type, x, y, width, height, text = '') {
-      this.id = nextShapeId++;
-      this.type = type;
-      this.x = x;
-      this.y = y;
-      this.width = width;
-      this.height = height;
-      this.text = text;
-      this.strokeColor = '#000000';
-      this.fillColor = '#ffffff';
-      this.lineWidth = 2;
-      this.lineStyle = 'solid'; // 'solid' or 'dashed'
-      // For connectors (line/arrow)
-      this.startNode = null;
-      this.startPoint = null; // 'north', 'south', 'east', 'west'
-      this.endNode = null;
-      this.endPoint = null;
-   }
-   
-   getConnectionPoints() {
-      if (this.type === 'line' || this.type === 'arrow' || this.type === 'text') {
-         return [];
-      }
-      
-      const centerX = this.x + this.width / 2;
-      const centerY = this.y + this.height / 2;
-      
-      if (this.type === 'circle') {
-         const radius = Math.min(this.width, this.height) / 2;
-         return {
-            north: { x: centerX, y: centerY - radius },
-            south: { x: centerX, y: centerY + radius },
-            east: { x: centerX + radius, y: centerY },
-            west: { x: centerX - radius, y: centerY }
-         };
-      } else {
-         return {
-            north: { x: centerX, y: this.y },
-            south: { x: centerX, y: this.y + this.height },
-            east: { x: this.x + this.width, y: centerY },
-            west: { x: this.x, y: centerY }
-         };
-      }
-   }
-   
-   drawConnectionPoints(highlight = false) {
-      if (this.type === 'line' || this.type === 'arrow' || this.type === 'text') {
-         return;
-      }
-      
-      const points = this.getConnectionPoints();
-      const pointRadius = 5;
-      
-      Object.entries(points).forEach(([direction, point]) => {
-         ctx.beginPath();
-         ctx.arc(point.x, point.y, pointRadius, 0, 2 * Math.PI);
-         
-         if (hoveredConnectionPoint && 
-             hoveredConnectionPoint.shape === this && 
-             hoveredConnectionPoint.point === direction) {
-            ctx.fillStyle = '#0d6efd';
-         } else if (highlight) {
-            ctx.fillStyle = '#6c757d';
-         } else {
-            ctx.fillStyle = '#dee2e6';
-         }
-         
-         ctx.fill();
-         ctx.strokeStyle = '#495057';
-         ctx.lineWidth = 1;
-         ctx.stroke();
-      });
-   }
-   
-   getConnectionCoordinates(point) {
-      const points = this.getConnectionPoints();
-      return points[point] || { x: this.x + this.width/2, y: this.y + this.height/2 };
-   }
-    
-   draw() {
-      ctx.strokeStyle = this.strokeColor;
-      ctx.lineWidth = selectedShape === this ? this.lineWidth + 1 : this.lineWidth;
-      ctx.fillStyle = this.fillColor;
-        
-      if (selectedShape === this) {
-         ctx.shadowColor = '#0d6efd';
-         ctx.shadowBlur = 10;
-      }
-        
-      switch(this.type) {
-         case 'circle':
-            ctx.beginPath();
-            const radius = Math.min(this.width, this.height) / 2;
-            ctx.arc(this.x + this.width/2, this.y + this.height/2, radius, 0, 2 * Math.PI);
-            ctx.fill();
-            ctx.stroke();
-            break;
-         case 'rectangle':
-            ctx.fillRect(this.x, this.y, this.width, this.height);
-            ctx.strokeRect(this.x, this.y, this.width, this.height);
-            break;
-         case 'line':
-            this.drawLine();
-            break;
-         case 'arrow':
-            this.drawArrow();
-            break;
-         case 'text':
-            ctx.font = '16px Arial';
-            ctx.fillStyle = this.strokeColor;
-            ctx.fillText(this.text, this.x, this.y);
-            if (selectedShape === this) {
-               const metrics = ctx.measureText(this.text);
-               ctx.strokeStyle = '#0d6efd';
-               ctx.strokeRect(this.x - 2, this.y - 16, metrics.width + 4, 20);
-            }
-            break;
-      }
-        
-      ctx.shadowColor = 'transparent';
-      ctx.shadowBlur = 0;
-        
-      // Draw text label for shapes
-      if (this.text && this.type !== 'text' && this.type !== 'line' && this.type !== 'arrow') {
-         ctx.font = '14px Arial';
-         ctx.fillStyle = this.strokeColor;
-         ctx.textAlign = 'center';
-         ctx.textBaseline = 'middle';
-         ctx.fillText(this.text, this.x + this.width/2, this.y + this.height/2);
-      }
-      
-      // Draw connection points when selected or when drawing connections
-      if (selectedShape === this || (currentTool === 'line' || currentTool === 'arrow')) {
-         this.drawConnectionPoints(selectedShape === this);
-      }
-   }
-   
-   drawLine() {
-      let startX, startY, endX, endY;
-      
-      if (this.startNode && this.startPoint) {
-         const startCoords = this.startNode.getConnectionCoordinates(this.startPoint);
-         startX = startCoords.x;
-         startY = startCoords.y;
-      } else {
-         startX = this.x;
-         startY = this.y;
-      }
-      
-      if (this.endNode && this.endPoint) {
-         const endCoords = this.endNode.getConnectionCoordinates(this.endPoint);
-         endX = endCoords.x;
-         endY = endCoords.y;
-      } else {
-         endX = this.x + this.width;
-         endY = this.y + this.height;
-      }
-      
-      // Apply line style
-      if (this.lineStyle === 'dashed') {
-         ctx.setLineDash([8, 4]);
-      } else {
-         ctx.setLineDash([]);
-      }
-      
+  constructor(type, x, y, width, height, text = '') {
+    this.id    = nextShapeId++;
+    this.type  = type;
+    this.x     = x;
+    this.y     = y;
+    this.width  = width;
+    this.height = height;
+    this.text   = text;
+
+    // Visual style
+    this.strokeColor = '#333333';
+    this.lineWidth   = 2;
+
+    // Java OO metadata
+    this.visibility  = 'public';   // 'public' | 'private' | 'protected' | 'package'
+    this.isStatic    = false;
+    this.isFinal     = false;
+    this.isAbstract  = false;
+    this.fieldType   = '';         // e.g. "String"
+    this.returnType  = 'void';     // for methods
+    this.params      = '';         // e.g. "String name, int age"
+
+    // Connector anchors
+    this.startNode  = null;
+    this.startPoint = null;   // 'north' | 'south' | 'east' | 'west'
+    this.endNode    = null;
+    this.endPoint   = null;
+  }
+
+  // ── Label builders ────────────────────────────────────────
+  buildFieldLabel() {
+    const parts = [];
+    if (this.visibility && this.visibility !== 'package') parts.push(this.visibility);
+    if (this.isStatic)  parts.push('static');
+    if (this.isFinal)   parts.push('final');
+    if (this.fieldType) parts.push(this.fieldType);
+    parts.push(this.text || 'field');
+    return parts.join(' ');
+  }
+
+  buildMethodLabel() {
+    const mods = [];
+    if (this.visibility && this.visibility !== 'package') mods.push(this.visibility);
+    if (this.isStatic)   mods.push('static');
+    if (this.isAbstract) mods.push('abstract');
+    const prefix = mods.join(' ');
+    const name   = this.text   || 'method';
+    const params = this.params || '';
+    const ret    = this.returnType || 'void';
+    return `${prefix}${prefix ? ' ' : ''}${name}(${params}): ${ret}`;
+  }
+
+  // ── Connection points (N/S/E/W) ───────────────────────────
+  getConnectionPoints() {
+    if (!isNodeShape(this.type)) return {};
+    const cx = this.x + this.width  / 2;
+    const cy = this.y + this.height / 2;
+    return {
+      north: { x: cx, y: this.y },
+      south: { x: cx, y: this.y + this.height },
+      east:  { x: this.x + this.width, y: cy },
+      west:  { x: this.x, y: cy }
+    };
+  }
+
+  getConnectionCoordinates(point) {
+    const pts = this.getConnectionPoints();
+    return pts[point] || { x: this.x + this.width / 2, y: this.y + this.height / 2 };
+  }
+
+  findConnectionPoint(x, y) {
+    if (!isNodeShape(this.type)) return null;
+    const pts = this.getConnectionPoints();
+    for (const [dir, pt] of Object.entries(pts)) {
+      if (Math.hypot(x - pt.x, y - pt.y) < 12) return dir;
+    }
+    return null;
+  }
+
+  drawConnectionPoints(highlight = false) {
+    if (!isNodeShape(this.type)) return;
+    const pts = this.getConnectionPoints();
+    Object.entries(pts).forEach(([dir, pt]) => {
       ctx.beginPath();
-      ctx.moveTo(startX, startY);
-      ctx.lineTo(endX, endY);
-      ctx.stroke();
-      
-      ctx.setLineDash([]);
-   }
-   
-   drawArrow() {
-      let startX, startY, endX, endY;
-      
-      if (this.startNode && this.startPoint) {
-         const startCoords = this.startNode.getConnectionCoordinates(this.startPoint);
-         startX = startCoords.x;
-         startY = startCoords.y;
-      } else {
-         startX = this.x;
-         startY = this.y;
-      }
-      
-      if (this.endNode && this.endPoint) {
-         const endCoords = this.endNode.getConnectionCoordinates(this.endPoint);
-         endX = endCoords.x;
-         endY = endCoords.y;
-      } else {
-         endX = this.x + this.width;
-         endY = this.y + this.height;
-      }
-      
-      const headLength = 15;
-      const angle = Math.atan2(endY - startY, endX - startX);
-      
-      // Apply line style
-      if (this.lineStyle === 'dashed') {
-         ctx.setLineDash([8, 4]);
-      } else {
-         ctx.setLineDash([]);
-      }
-         
-      ctx.beginPath();
-      ctx.moveTo(startX, startY);
-      ctx.lineTo(endX, endY);
-      ctx.stroke();
-      
-      ctx.setLineDash([]);
-         
-      ctx.beginPath();
-      ctx.moveTo(endX, endY);
-      ctx.lineTo(endX - headLength * Math.cos(angle - Math.PI / 6),
-                  endY - headLength * Math.sin(angle - Math.PI / 6));
-      ctx.lineTo(endX - headLength * Math.cos(angle + Math.PI / 6),
-                  endY - headLength * Math.sin(angle + Math.PI / 6));
-      ctx.closePath();
-      ctx.fillStyle = this.strokeColor;
+      ctx.arc(pt.x, pt.y, 5, 0, 2 * Math.PI);
+      ctx.fillStyle =
+        (hoveredConnectionPoint?.shape === this && hoveredConnectionPoint?.point === dir)
+          ? '#0d6efd'
+          : highlight ? '#6c757d' : '#adb5bd';
       ctx.fill();
-   }
-    
-   contains(x, y) {
-      if (this.type === 'line' || this.type === 'arrow') {
-         return this.containsLine(x, y);
-      } else if (this.type === 'circle') {
-         const radius = Math.min(this.width, this.height) / 2;
-         const dx = x - (this.x + this.width/2);
-         const dy = y - (this.y + this.height/2);
-         return Math.sqrt(dx*dx + dy*dy) <= radius;
-      } else if (this.type === 'text') {
-         ctx.font = '16px Arial';
-         const metrics = ctx.measureText(this.text);
-         return x >= this.x && x <= this.x + metrics.width && 
-                  y >= this.y - 16 && y <= this.y + 4;
-      } else {
-         return x >= this.x && x <= this.x + this.width &&
-                  y >= this.y && y <= this.y + this.height;
-      }
-   }
-   
-   containsLine(x, y) {
-      let startX, startY, endX, endY;
-      
-      if (this.startNode && this.startPoint) {
-         const startCoords = this.startNode.getConnectionCoordinates(this.startPoint);
-         startX = startCoords.x;
-         startY = startCoords.y;
-      } else {
-         startX = this.x;
-         startY = this.y;
-      }
-      
-      if (this.endNode && this.endPoint) {
-         const endCoords = this.endNode.getConnectionCoordinates(this.endPoint);
-         endX = endCoords.x;
-         endY = endCoords.y;
-      } else {
-         endX = this.x + this.width;
-         endY = this.y + this.height;
-      }
-      
-      const distance = this.pointToLineDistance(x, y, startX, startY, endX, endY);
-      return distance < 8;
-   }
-    
-   pointToLineDistance(px, py, x1, y1, x2, y2) {
-      const dx = x2 - x1;
-      const dy = y2 - y1;
-      const length = Math.sqrt(dx*dx + dy*dy);
-      if (length === 0) return Math.sqrt((px-x1)**2 + (py-y1)**2);
-        
-      const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / (length * length)));
-      const projX = x1 + t * dx;
-      const projY = y1 + t * dy;
-      return Math.sqrt((px - projX)**2 + (py - projY)**2);
-   }
-   
-   findConnectionPoint(x, y) {
-      if (this.type === 'line' || this.type === 'arrow' || this.type === 'text') {
-         return null;
-      }
-      
-      const points = this.getConnectionPoints();
-      const threshold = 10;
-      
-      for (let [direction, point] of Object.entries(points)) {
-         const dist = Math.sqrt((x - point.x)**2 + (y - point.y)**2);
-         if (dist < threshold) {
-            return direction;
-         }
-      }
-      
-      return null;
-   }
+      ctx.strokeStyle = '#495057';
+      ctx.lineWidth   = 1;
+      ctx.stroke();
+    });
+  }
+
+  // ── Connector helpers ─────────────────────────────────────
+  getConnectorCoords() {
+    let sX, sY, eX, eY;
+    if (this.startNode && this.startPoint) {
+      const c = this.startNode.getConnectionCoordinates(this.startPoint);
+      sX = c.x; sY = c.y;
+    } else { sX = this.x; sY = this.y; }
+    if (this.endNode && this.endPoint) {
+      const c = this.endNode.getConnectionCoordinates(this.endPoint);
+      eX = c.x; eY = c.y;
+    } else { eX = this.x + this.width; eY = this.y + this.height; }
+    return { startX: sX, startY: sY, endX: eX, endY: eY };
+  }
+
+  _hollowArrowhead(endX, endY, angle, len) {
+    ctx.beginPath();
+    ctx.moveTo(endX, endY);
+    ctx.lineTo(endX - len * Math.cos(angle - Math.PI / 6), endY - len * Math.sin(angle - Math.PI / 6));
+    ctx.lineTo(endX - len * Math.cos(angle + Math.PI / 6), endY - len * Math.sin(angle + Math.PI / 6));
+    ctx.closePath();
+    ctx.fillStyle   = 'white';
+    ctx.fill();
+    ctx.strokeStyle = this.strokeColor;
+    ctx.lineWidth   = 2;
+    ctx.stroke();
+  }
+
+  _filledArrowhead(endX, endY, angle, len, color) {
+    ctx.beginPath();
+    ctx.moveTo(endX, endY);
+    ctx.lineTo(endX - len * Math.cos(angle - Math.PI / 6), endY - len * Math.sin(angle - Math.PI / 6));
+    ctx.lineTo(endX - len * Math.cos(angle + Math.PI / 6), endY - len * Math.sin(angle + Math.PI / 6));
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+
+  _midLabel(sx, sy, ex, ey, label) {
+    ctx.font         = '11px Arial';
+    ctx.fillStyle    = '#444';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, (sx + ex) / 2, (sy + ey) / 2 - 10);
+  }
+
+  // ── Main draw dispatcher ──────────────────────────────────
+  draw() {
+    ctx.lineWidth   = selectedShape === this ? this.lineWidth + 1 : this.lineWidth;
+    ctx.strokeStyle = this.strokeColor;
+    if (selectedShape === this) { ctx.shadowColor = '#0d6efd'; ctx.shadowBlur = 10; }
+
+    switch (this.type) {
+      case 'class':            this._drawClass();          break;
+      case 'interface':        this._drawInterface();      break;
+      case 'field':            this._drawField();          break;
+      case 'method-public':
+      case 'method-private':
+      case 'method-protected': this._drawMethod();         break;
+      case 'extends':          this._drawExtendsArrow();   break;
+      case 'implements':       this._drawImplementsArrow();break;
+      case 'calls':            this._drawCallsArrow();     break;
+    }
+
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur  = 0;
+
+    if (isNodeShape(this.type) && (selectedShape === this || isConnectorShape(currentTool))) {
+      this.drawConnectionPoints(selectedShape === this);
+    }
+  }
+
+  // ── Node draw methods ─────────────────────────────────────
+  _drawClass() {
+    const HDR = 34;
+    const name = this.text || 'ClassName';
+    const lw = selectedShape === this ? 3 : 2;
+
+    // Background
+    ctx.fillStyle = '#f0f0f0';
+    ctx.fillRect(this.x, this.y, this.width, this.height);
+    // Header bar
+    ctx.fillStyle = '#add8e6';
+    ctx.fillRect(this.x, this.y, this.width, HDR);
+    // Border
+    ctx.strokeStyle = this.strokeColor;
+    ctx.lineWidth = lw;
+    ctx.strokeRect(this.x, this.y, this.width, this.height);
+    ctx.beginPath();
+    ctx.moveTo(this.x, this.y + HDR);
+    ctx.lineTo(this.x + this.width, this.y + HDR);
+    ctx.stroke();
+    // Label
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle    = '#000';
+    if (this.isAbstract) {
+      ctx.font = '10px Arial'; ctx.fillText('«abstract»', this.x + this.width / 2, this.y + HDR / 2 - 7);
+      ctx.font = 'italic bold 12px Arial';
+    } else {
+      ctx.font = 'bold 13px Arial';
+    }
+    ctx.fillText(name, this.x + this.width / 2, this.y + (this.isAbstract ? HDR / 2 + 6 : HDR / 2));
+  }
+
+  _drawInterface() {
+    const HDR = 34;
+    const name = this.text || 'InterfaceName';
+    const lw = selectedShape === this ? 3 : 2;
+
+    ctx.fillStyle = '#f5f8ff';
+    ctx.fillRect(this.x, this.y, this.width, this.height);
+    ctx.fillStyle = '#c4deff';
+    ctx.fillRect(this.x, this.y, this.width, HDR);
+    ctx.strokeStyle = this.strokeColor;
+    ctx.lineWidth = lw;
+    ctx.setLineDash([6, 3]);
+    ctx.strokeRect(this.x, this.y, this.width, this.height);
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(this.x, this.y + HDR);
+    ctx.lineTo(this.x + this.width, this.y + HDR);
+    ctx.stroke();
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle    = '#000';
+    ctx.font = '10px Arial'; ctx.fillText('«interface»', this.x + this.width / 2, this.y + HDR / 2 - 7);
+    ctx.font = 'italic bold 12px Arial';
+    ctx.fillText(name, this.x + this.width / 2, this.y + HDR / 2 + 7);
+  }
+
+  _drawField() {
+    const EAR = 10;
+    const lbl = this.buildFieldLabel();
+    ctx.fillStyle = '#ffffe0';
+    ctx.beginPath();
+    ctx.moveTo(this.x, this.y);
+    ctx.lineTo(this.x + this.width - EAR, this.y);
+    ctx.lineTo(this.x + this.width, this.y + EAR);
+    ctx.lineTo(this.x + this.width, this.y + this.height);
+    ctx.lineTo(this.x, this.y + this.height);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = this.strokeColor;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(this.x + this.width - EAR, this.y);
+    ctx.lineTo(this.x + this.width - EAR, this.y + EAR);
+    ctx.lineTo(this.x + this.width, this.y + EAR);
+    ctx.stroke();
+    ctx.font = '11px monospace';
+    ctx.fillStyle    = '#000';
+    ctx.textAlign    = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(lbl, this.x + 6, this.y + this.height / 2, this.width - 20);
+  }
+
+  _drawMethod() {
+    const TAB_W = 8, TAB_H = 6;
+    const lbl = this.buildMethodLabel();
+    const fill = this.type === 'method-public'  ? '#90ee90'
+               : this.type === 'method-private' ? '#f08080'
+               : '#d3d3d3';  // protected
+    ctx.fillStyle = fill;
+    ctx.fillRect(this.x + TAB_W, this.y, this.width - TAB_W, this.height);
+    ctx.strokeStyle = this.strokeColor;
+    ctx.strokeRect(this.x + TAB_W, this.y, this.width - TAB_W, this.height);
+    // Left tab notches (component shape)
+    const topTabY = this.y + Math.floor(this.height * 0.25);
+    const botTabY = this.y + Math.floor(this.height * 0.60);
+    ctx.fillRect(this.x, topTabY, TAB_W, TAB_H);
+    ctx.strokeRect(this.x, topTabY, TAB_W, TAB_H);
+    ctx.fillRect(this.x, botTabY, TAB_W, TAB_H);
+    ctx.strokeRect(this.x, botTabY, TAB_W, TAB_H);
+    ctx.font = '11px monospace';
+    ctx.fillStyle    = '#000';
+    ctx.textAlign    = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(lbl, this.x + TAB_W + 5, this.y + this.height / 2, this.width - TAB_W - 10);
+  }
+
+  // ── Connector draw methods ────────────────────────────────
+  _drawExtendsArrow() {
+    const { startX, startY, endX, endY } = this.getConnectorCoords();
+    const LEN = 18;
+    const angle = Math.atan2(endY - startY, endX - startX);
+    ctx.setLineDash([]);
+    ctx.strokeStyle = this.strokeColor;
+    ctx.lineWidth   = selectedShape === this ? 3 : 2;
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    ctx.lineTo(endX - LEN * Math.cos(angle), endY - LEN * Math.sin(angle));
+    ctx.stroke();
+    this._hollowArrowhead(endX, endY, angle, LEN);
+    this._midLabel(startX, startY, endX, endY, 'extends');
+  }
+
+  _drawImplementsArrow() {
+    const { startX, startY, endX, endY } = this.getConnectorCoords();
+    const LEN = 18;
+    const angle = Math.atan2(endY - startY, endX - startX);
+    ctx.setLineDash([8, 4]);
+    ctx.strokeStyle = this.strokeColor;
+    ctx.lineWidth   = selectedShape === this ? 3 : 2;
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    ctx.lineTo(endX - LEN * Math.cos(angle), endY - LEN * Math.sin(angle));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    this._hollowArrowhead(endX, endY, angle, LEN);
+    this._midLabel(startX, startY, endX, endY, 'implements');
+  }
+
+  _drawCallsArrow() {
+    const { startX, startY, endX, endY } = this.getConnectorCoords();
+    const LEN = 14;
+    const angle = Math.atan2(endY - startY, endX - startX);
+    ctx.setLineDash([]);
+    ctx.strokeStyle = '#0000cd';
+    ctx.lineWidth   = selectedShape === this ? 3 : 2;
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    ctx.lineTo(endX, endY);
+    ctx.stroke();
+    this._filledArrowhead(endX, endY, angle, LEN, '#0000cd');
+    this._midLabel(startX, startY, endX, endY, 'calls');
+  }
+
+  // ── Hit testing ───────────────────────────────────────────
+  contains(x, y) {
+    if (isConnectorShape(this.type)) return this._containsLine(x, y);
+    return x >= this.x && x <= this.x + this.width &&
+           y >= this.y && y <= this.y + this.height;
+  }
+
+  _containsLine(x, y) {
+    const { startX, startY, endX, endY } = this.getConnectorCoords();
+    return this._ptLineDist(x, y, startX, startY, endX, endY) < 8;
+  }
+
+  _ptLineDist(px, py, x1, y1, x2, y2) {
+    const dx = x2 - x1, dy = y2 - y1;
+    const len2 = dx * dx + dy * dy;
+    if (len2 === 0) return Math.hypot(px - x1, py - y1);
+    const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / len2));
+    return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+  }
 }
 
-
-// Tool button handlers
+// ── Tool buttons ──────────────────────────────────────────────
 document.querySelectorAll('.tool-button').forEach(button => {
-   button.addEventListener('click', function() {
-      document.querySelectorAll('.tool-button').forEach(b => b.classList.remove('active'));
-      this.classList.add('active');
-      currentTool = this.dataset.tool;
-   });
+  button.addEventListener('click', function () {
+    document.querySelectorAll('.tool-button').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
+    currentTool = this.dataset.tool;
+    if (canvas) canvas.style.cursor = currentTool === 'select' ? 'default' : 'crosshair';
+  });
 });
 
-// Canvas event handlers
+// ── Canvas event handlers ─────────────────────────────────────
 if (canvas) {
-   canvas.addEventListener('mousedown', handleMouseDown);
-   canvas.addEventListener('mousemove', handleMouseMove);
-   canvas.addEventListener('mouseup', handleMouseUp);
-   canvas.addEventListener('dblclick', handleDoubleClick);
+  canvas.addEventListener('mousedown', handleMouseDown);
+  canvas.addEventListener('mousemove', handleMouseMove);
+  canvas.addEventListener('mouseup',   handleMouseUp);
+  canvas.addEventListener('dblclick',  handleDoubleClick);
 }
 
 function handleMouseDown(e) {
-   const rect = canvas.getBoundingClientRect();
-   const x = e.clientX - rect.left;
-   const y = e.clientY - rect.top;
-    
-   if (currentTool === 'select') {
-      // Check if clicking on existing shape
-      for (let i = shapes.length - 1; i >= 0; i--) {
-         if (shapes[i].contains(x, y)) {
-            selectedShape = shapes[i];
-            isDragging = true;
-            dragOffsetX = x - selectedShape.x;
-            dragOffsetY = y - selectedShape.y;
-            updatePropertyEditor();
-            redraw();
-            return;
-         }
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+
+  if (currentTool === 'select') {
+    for (let i = shapes.length - 1; i >= 0; i--) {
+      if (shapes[i].contains(x, y)) {
+        selectedShape  = shapes[i];
+        isDragging     = true;
+        dragOffsetX    = x - selectedShape.x;
+        dragOffsetY    = y - selectedShape.y;
+        updatePropertyEditor();
+        redraw();
+        return;
       }
-      selectedShape = null;
-      updatePropertyEditor();
-      redraw();
-   } else if (currentTool === 'line' || currentTool === 'arrow') {
-      // Check if clicking on a connection point
-      for (let i = shapes.length - 1; i >= 0; i--) {
-         const shape = shapes[i];
-         if (shape.type !== 'line' && shape.type !== 'arrow' && shape.type !== 'text') {
-            const point = shape.findConnectionPoint(x, y);
-            if (point) {
-               drawingConnection = true;
-               startConnectionPoint = { shape: shape, point: point };
-               const coords = shape.getConnectionCoordinates(point);
-               startX = coords.x;
-               startY = coords.y;
-               return;
-            }
-         }
+    }
+    selectedShape = null;
+    updatePropertyEditor();
+    redraw();
+
+  } else if (isConnectorShape(currentTool)) {
+    // Try to start from a connection point
+    for (let i = shapes.length - 1; i >= 0; i--) {
+      const shape = shapes[i];
+      if (!isNodeShape(shape.type)) continue;
+      const pt = shape.findConnectionPoint(x, y);
+      if (pt) {
+        drawingConnection = true;
+        startConnectionPoint = { shape, point: pt };
+        const coords = shape.getConnectionCoordinates(pt);
+        startX = coords.x; startY = coords.y;
+        return;
       }
-      // If not on connection point, start regular drawing
-      isDrawing = true;
-      startX = x;
-      startY = y;
-   } else {
-      isDrawing = true;
-      startX = x;
-      startY = y;
-   }
+    }
+
+  } else if (isNodeShape(currentTool)) {
+    isDrawing = true;
+    startX = x; startY = y;
+  }
 }
 
 function handleMouseMove(e) {
-   const rect = canvas.getBoundingClientRect();
-   const x = e.clientX - rect.left;
-   const y = e.clientY - rect.top;
-   
-   // Update hovered connection point
-   hoveredConnectionPoint = null;
-   if (currentTool === 'line' || currentTool === 'arrow' || currentTool === 'select') {
-      for (let shape of shapes) {
-         if (shape.type !== 'line' && shape.type !== 'arrow' && shape.type !== 'text') {
-            const point = shape.findConnectionPoint(x, y);
-            if (point) {
-               hoveredConnectionPoint = { shape: shape, point: point };
-               canvas.style.cursor = 'crosshair';
-               if (!isDragging && !isDrawing && !drawingConnection) {
-                  redraw();
-               }
-               break;
-            }
-         }
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+
+  // Update hovered connection point
+  hoveredConnectionPoint = null;
+  if (isConnectorShape(currentTool) || currentTool === 'select') {
+    for (const shape of shapes) {
+      if (!isNodeShape(shape.type)) continue;
+      const pt = shape.findConnectionPoint(x, y);
+      if (pt) {
+        hoveredConnectionPoint = { shape, point: pt };
+        canvas.style.cursor = 'crosshair';
+        if (!isDragging && !isDrawing && !drawingConnection) redraw();
+        break;
       }
-      if (!hoveredConnectionPoint && !isDragging && !isDrawing && !drawingConnection) {
-         canvas.style.cursor = currentTool === 'select' ? 'default' : 'crosshair';
-      }
-   }
-    
-   if (isDragging && selectedShape) {
-      if (selectedShape.type !== 'line' && selectedShape.type !== 'arrow') {
-         selectedShape.x = x - dragOffsetX;
-         selectedShape.y = y - dragOffsetY;
-      }
-      redraw();
-   } else if (drawingConnection || isDrawing) {
-      redraw();
-      ctx.strokeStyle = '#666';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([5, 5]);
-        
-      if (drawingConnection || currentTool === 'line' || currentTool === 'arrow') {
-         ctx.beginPath();
-         ctx.moveTo(startX, startY);
-         ctx.lineTo(x, y);
-         ctx.stroke();
-      } else {
-         const width = x - startX;
-         const height = y - startY;
-        
-         switch(currentTool) {
-            case 'circle':
-               ctx.beginPath();
-               const radius = Math.min(Math.abs(width), Math.abs(height)) / 2;
-               ctx.arc(startX + width/2, startY + height/2, radius, 0, 2 * Math.PI);
-               ctx.stroke();
-               break;
-            case 'rectangle':
-               ctx.strokeRect(startX, startY, width, height);
-               break;
-         }
-      }
-      ctx.setLineDash([]);
-   }
+    }
+  }
+
+  if (isDragging && selectedShape && isNodeShape(selectedShape.type)) {
+    selectedShape.x = x - dragOffsetX;
+    selectedShape.y = y - dragOffsetY;
+    redraw();
+    updateDOTPreview();
+  } else if (drawingConnection || isDrawing) {
+    redraw();
+    ctx.strokeStyle = '#888';
+    ctx.lineWidth   = 1;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
 }
 
 function handleMouseUp(e) {
-   const rect = canvas.getBoundingClientRect();
-   const x = e.clientX - rect.left;
-   const y = e.clientY - rect.top;
-   
-   if (drawingConnection) {
-      // Check if released on a connection point
-      for (let shape of shapes) {
-         if (shape.type !== 'line' && shape.type !== 'arrow' && shape.type !== 'text') {
-            const point = shape.findConnectionPoint(x, y);
-            if (point && shape !== startConnectionPoint.shape) {
-               // Create connected line/arrow
-               const connector = new Shape(currentTool, 0, 0, 0, 0);
-               connector.startNode = startConnectionPoint.shape;
-               connector.startPoint = startConnectionPoint.point;
-               connector.endNode = shape;
-               connector.endPoint = point;
-               shapes.push(connector);
-               drawingConnection = false;
-               startConnectionPoint = null;
-               updateDOTPreview();
-               redraw();
-               return;
-            }
-         }
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+
+  if (drawingConnection) {
+    for (const shape of shapes) {
+      if (!isNodeShape(shape.type)) continue;
+      const pt = shape.findConnectionPoint(x, y);
+      if (pt && shape !== startConnectionPoint.shape) {
+        const conn      = new Shape(currentTool, 0, 0, 0, 0);
+        conn.startNode  = startConnectionPoint.shape;
+        conn.startPoint = startConnectionPoint.point;
+        conn.endNode    = shape;
+        conn.endPoint   = pt;
+        shapes.push(conn);
+        updateDOTPreview();
+        break;
       }
-      // If not released on connection point, cancel
-      drawingConnection = false;
-      startConnectionPoint = null;
-      redraw();
-   } else if (isDrawing) {
-      const width = x - startX;
-      const height = y - startY;
-        
-      if (currentTool === 'text') {
-         const text = prompt('Enter text:');
-         if (text) {
-            shapes.push(new Shape('text', startX, startY, 0, 0, text));
-         }
-      } else if (currentTool === 'line' || currentTool === 'arrow') {
-         // Create unconnected line/arrow
-         const connector = new Shape(currentTool, startX, startY, x - startX, y - startY);
-         shapes.push(connector);
-      } else if (Math.abs(width) > 5 && Math.abs(height) > 5) {
-         shapes.push(new Shape(currentTool, 
-            Math.min(startX, x), 
-            Math.min(startY, y), 
-            Math.abs(width), 
-            Math.abs(height)));
-      }
-        
-      isDrawing = false;
+    }
+    drawingConnection = false;
+    startConnectionPoint = null;
+    redraw();
+
+  } else if (isDrawing) {
+    if (isNodeShape(currentTool)) {
+      const isLarge = currentTool === 'class' || currentTool === 'interface';
+      let dw = Math.abs(x - startX);
+      let dh = Math.abs(y - startY);
+      if (dw < 15) dw = isLarge ? 200 : 200;
+      if (dh < 15) dh = isLarge ? 150 : 36;
+
+      const shape = new Shape(
+        currentTool,
+        Math.min(startX, x),
+        Math.min(startY, y),
+        dw, dh
+      );
+      shapes.push(shape);
+      selectedShape = shape;
+      updatePropertyEditor();
       updateDOTPreview();
-      redraw();
-   }
-   isDragging = false;
+    }
+    isDrawing = false;
+    redraw();
+  }
+
+  isDragging = false;
 }
 
 function handleDoubleClick(e) {
-    if (selectedShape && selectedShape.type !== 'text' && selectedShape.type !== 'line' && selectedShape.type !== 'arrow') {
-        const text = prompt('Enter label:', selectedShape.text);
-        if (text !== null) {
-            selectedShape.text = text;
-            redraw();
-        }
-    }
+  if (!selectedShape || !isNodeShape(selectedShape.type)) return;
+  const lbl = selectedShape.type.startsWith('method') ? 'Method name:'
+            : selectedShape.type === 'field'           ? 'Field name:'
+            : 'Class / Interface name:';
+  const text = prompt(lbl, selectedShape.text);
+  if (text !== null) {
+    selectedShape.text = text;
+    updatePropertyEditor();
+    updateDOTPreview();
+    redraw();
+  }
 }
 
 function redraw() {
-   if (!ctx) return;
-   ctx.clearRect(0, 0, canvas.width, canvas.height);
-   shapes.forEach(shape => shape.draw());
+  if (!ctx) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  shapes.forEach(s => s.draw());
 }
 
-function updatePropertyEditor() {
-   const editorContent = document.getElementById('propertyEditorContent');
-   if (!editorContent) return;
-    
-   if (!selectedShape) {
-      editorContent.innerHTML = '<p class="text-muted"><small>Select a shape to edit its properties</small></p>';
-      return;
-   }
-    
-   let html = `
-      <div class="mb-3">
-         <label class="form-label"><strong>Shape Type:</strong> ${selectedShape.type}</label>
-      </div>
-   `;
-    
-   if (selectedShape.type !== 'line' && selectedShape.type !== 'arrow') {
-      html += `
-         <div class="mb-3">
-            <label for="shapeLabel" class="form-label">Label</label>
-            <input type="text" class="form-control form-control-sm" id="shapeLabel" value="${selectedShape.text || ''}" onchange="updateShapeProperty('text', this.value)">
-         </div>
-      `;
-   }
-    
-   if (selectedShape.type !== 'text') {
-      html += `
-         <div class="mb-3">
-            <label for="strokeColor" class="form-label">Border Color</label>
-            <input type="color" class="form-control form-control-color" id="strokeColor" value="${selectedShape.strokeColor}" onchange="updateShapeProperty('strokeColor', this.value)">
-         </div>
-         <div class="mb-3">
-            <label for="lineWidth" class="form-label">Border Width: <span id="lineWidthValue">${selectedShape.lineWidth}</span></label>
-            <input type="range" class="form-range" id="lineWidth" min="1" max="10" value="${selectedShape.lineWidth}" oninput="document.getElementById('lineWidthValue').textContent=this.value" onchange="updateShapeProperty('lineWidth', parseInt(this.value))">
-         </div>
-      `;
-      
-      // Add line style for lines and arrows
-      if (selectedShape.type === 'line' || selectedShape.type === 'arrow') {
-         html += `
-            <div class="mb-3">
-               <label for="lineStyle" class="form-label">Line Style</label>
-               <select class="form-select form-select-sm" id="lineStyle" onchange="updateShapeProperty('lineStyle', this.value)">
-                  <option value="solid" ${selectedShape.lineStyle === 'solid' ? 'selected' : ''}>Solid</option>
-                  <option value="dashed" ${selectedShape.lineStyle === 'dashed' ? 'selected' : ''}>Dashed</option>
-               </select>
-            </div>
-         `;
-      }
-   }
-    
-   if (selectedShape.type === 'circle' || selectedShape.type === 'rectangle') {
-      html += `
-         <div class="mb-3">
-            <label for="fillColor" class="form-label">Fill Color</label>
-            <input type="color" class="form-control form-control-color" id="fillColor" value="${selectedShape.fillColor}" onchange="updateShapeProperty('fillColor', this.value)">
-         </div>
-      `;
-   }
-    
-   html += `
-      <button class="btn btn-danger btn-sm w-100" onclick="deleteSelectedShape()">Delete Shape</button>
-   `;
-    
-   editorContent.innerHTML = html;
+// ── DOT generation ────────────────────────────────────────────
+function _sanitize(name) {
+  return (name || 'unnamed').replace(/[^a-zA-Z0-9_]/g, '_');
 }
 
-function updateShapeProperty(property, value) {
-   if (selectedShape) {
-      selectedShape[property] = value;
-      redraw();
-      updateDOTPreview();
-   }
+function _containedIn(inner, outer) {
+  const cx = inner.x + inner.width  / 2;
+  const cy = inner.y + inner.height / 2;
+  return cx >= outer.x && cx <= outer.x + outer.width &&
+         cy >= outer.y && cy <= outer.y + outer.height;
 }
 
-function deleteSelectedShape() {
-   if (selectedShape) {
-      shapes = shapes.filter(s => s !== selectedShape);
-      selectedShape = null;
-      updatePropertyEditor();
-      redraw();
-      updateDOTPreview();
+function shapesToBackendDOT() {
+  const classNodes  = shapes.filter(s => s.type === 'class' || s.type === 'interface');
+  const fieldNodes  = shapes.filter(s => s.type === 'field');
+  const methodNodes = shapes.filter(s => s.type.startsWith('method-'));
+  const connectors  = shapes.filter(s => isConnectorShape(s.type));
+
+  let dot = 'digraph JavaClasses {\n';
+  dot += '    rankdir=TB;\n';
+  dot += '    fontname="Arial";\n';
+  dot += '    node [fontname="Arial"];\n';
+  dot += '    edge [fontname="Arial", fontsize=10];\n\n';
+
+  // ── Class/Interface subgraphs ──────────────────────────────
+  classNodes.forEach(cls => {
+    const rawName = cls.text || `node${cls.id}`;
+    const clsId   = _sanitize(rawName);
+
+    let classLabel = rawName;
+    if (cls.type === 'interface') classLabel = `${rawName} (interface)`;
+    else if (cls.isAbstract)     classLabel = `${rawName} (abstract)`;
+
+    const containedFields  = fieldNodes.filter(f => _containedIn(f, cls));
+    const containedMethods = methodNodes.filter(m => _containedIn(m, cls));
+
+    dot += `    subgraph cluster_${clsId} {\n`;
+    dot += `        label="${classLabel}";\n`;
+    dot += `        style=filled;\n`;
+    dot += `        color=lightgrey;\n`;
+    dot += `        node [shape=box, style=filled, fillcolor=white];\n\n`;
+
+    dot += `        "${clsId}_class" [label="${classLabel}", shape=ellipse, style=filled, fillcolor=lightblue];\n`;
+
+    // Fields subgraph
+    if (containedFields.length > 0) {
+      dot += `        subgraph cluster_${clsId}_fields {\n`;
+      dot += `            label="Fields";\n`;
+      dot += `            style=dashed;\n`;
+      containedFields.forEach(f => {
+        const fId  = `${clsId}_${_sanitize(f.text || `f${f.id}`)}`;
+        const lbl  = f.buildFieldLabel();
+        dot += `            "${fId}" [label="${lbl}", shape=note, style=filled, fillcolor=lightyellow];\n`;
+      });
+      dot += `        }\n`;
     }
-}
 
-function clearCanvas() {
-   if (confirm('Are you sure you want to clear the canvas?')) {
-      shapes = [];
-      selectedShape = null;
-      updatePropertyEditor();
-      redraw();
-      updateDOTPreview();
-   }
+    // Methods subgraph
+    if (containedMethods.length > 0) {
+      dot += `        subgraph cluster_${clsId}_methods {\n`;
+      dot += `            label="Methods";\n`;
+      dot += `            style=dashed;\n`;
+      containedMethods.forEach(m => {
+        const mId   = `${clsId}_${_sanitize(m.text || `m${m.id}`)}`;
+        const lbl   = m.buildMethodLabel();
+        const color = m.type === 'method-public'  ? 'lightgreen'
+                    : m.type === 'method-private' ? 'lightcoral'
+                    : 'lightgray';
+        dot += `            "${mId}" [label="${lbl}", shape=component, style=filled, fillcolor=${color}];\n`;
+      });
+      dot += `        }\n`;
+    }
+
+    // Internal connections: class_header → each field / method
+    containedFields.forEach(f => {
+      const fId = `${clsId}_${_sanitize(f.text || `f${f.id}`)}`;
+      dot += `        "${clsId}_class" -> "${fId}" [style=dashed, arrowhead=none];\n`;
+    });
+    containedMethods.forEach(m => {
+      const mId = `${clsId}_${_sanitize(m.text || `m${m.id}`)}`;
+      dot += `        "${clsId}_class" -> "${mId}" [style=dashed, arrowhead=none];\n`;
+    });
+
+    dot += `    }\n\n`;
+  });
+
+  // ── Inter-class relationships ──────────────────────────────
+  connectors.forEach(conn => {
+    if (!conn.startNode || !conn.endNode) return;
+
+    if (conn.type === 'extends' || conn.type === 'implements') {
+      const fromId = `${_sanitize(conn.startNode.text || `node${conn.startNode.id}`)}_class`;
+      const toId   = `${_sanitize(conn.endNode.text   || `node${conn.endNode.id}`)}_class`;
+      if (conn.type === 'extends') {
+        dot += `    "${fromId}" -> "${toId}" [arrowhead=empty, style=solid, label=extends];\n`;
+      } else {
+        dot += `    "${fromId}" -> "${toId}" [arrowhead=empty, style=dashed, label=implements];\n`;
+      }
+
+    } else if (conn.type === 'calls') {
+      // Build node IDs: if from/to is a method, find its parent class
+      function methodNodeId(node) {
+        const parent = classNodes.find(c => _containedIn(node, c));
+        const pName  = parent ? _sanitize(parent.text || `node${parent.id}`) : _sanitize(node.text || `node${node.id}`);
+        return `${pName}_${_sanitize(node.text || `m${node.id}`)}`;
+      }
+      const fromIsMethod = conn.startNode.type.startsWith('method-');
+      const toIsMethod   = conn.endNode.type.startsWith('method-');
+      const fromId = fromIsMethod ? methodNodeId(conn.startNode) : `${_sanitize(conn.startNode.text || `node${conn.startNode.id}`)}_class`;
+      const toId   = toIsMethod   ? methodNodeId(conn.endNode)   : `${_sanitize(conn.endNode.text   || `node${conn.endNode.id}`)}_class`;
+      dot += `    "${fromId}" -> "${toId}" [arrowhead=normal, style=solid, color=blue];\n`;
+    }
+  });
+
+  dot += '}\n';
+  return dot;
 }
 
 function updateDOTPreview() {
-	console.log("Shapes array:", shapes);
-    const previewDiv = document.getElementById('dotPreview');
-    if (!previewDiv) return;
-    
-    let dot = 'digraph G {\n';
-    dot += '  node [shape=record];\n';
-    dot += '  rankdir=TB;\n\n';
-    
-    const nodes = shapes.filter(s => s.type === 'circle' || s.type === 'rectangle');
-    const edges = shapes.filter(s => s.type === 'arrow' || s.type === 'line');
-    
-    // Export nodes
-    nodes.forEach(shape => {
-        const label = shape.text || `node${shape.id}`;
-        const shapeType = shape.type === 'circle' ? 'ellipse' : 'box';
-        const fillColor = shape.fillColor.replace('#', '');
-        const strokeColor = shape.strokeColor.replace('#', '');
-        dot += `  node${shape.id} [label="${label}", shape=${shapeType}, style=filled, fillcolor="#${fillColor}", color="#${strokeColor}", penwidth=${shape.lineWidth}];\n`;
-    });
-    
-    dot += '\n';
-    
-    // Export edges
-    edges.forEach(edge => {
-        if (edge.startNode && edge.endNode) {
-            const edgeOp = edge.type === 'arrow' ? '->' : '--';
-            const strokeColor = edge.strokeColor.replace('#', '');
-            const styleAttr = edge.lineStyle === 'dashed' ? ', style=dashed' : '';
-            dot += `  node${edge.startNode.id} ${edgeOp} node${edge.endNode.id} [color="#${strokeColor}", penwidth=${edge.lineWidth}${styleAttr}];\n`;
-        }
-    });
-    
-    dot += '}\n';
-    
-    previewDiv.textContent = dot;
+  const el = document.getElementById('dotPreview');
+  if (el) el.textContent = shapesToBackendDOT();
+}
+
+// ── Property editor ───────────────────────────────────────────
+function updatePropertyEditor() {
+  const el = document.getElementById('propertyEditorContent');
+  if (!el) return;
+  if (!selectedShape) {
+    el.innerHTML = '<p class="text-muted"><small>Select a shape to edit its properties</small></p>';
+    return;
+  }
+  const s = selectedShape;
+  let html = `<div class="mb-2"><span class="badge bg-secondary">${s.type}</span></div>`;
+
+  if (s.type === 'class' || s.type === 'interface') {
+    html += propText('Name', s.text || '', 'text');
+    if (s.type === 'class') html += propCheck('Abstract', 'isAbstract', s.isAbstract);
+
+  } else if (s.type === 'field') {
+    html += propText('Field Name', s.text || '', 'text');
+    html += propText('Type', s.fieldType || '', 'fieldType', 'e.g. String, int');
+    html += propVis(s.visibility);
+    html += propCheck('static', 'isStatic', s.isStatic);
+    html += propCheck('final',  'isFinal',  s.isFinal);
+
+  } else if (s.type.startsWith('method-')) {
+    html += propText('Method Name', s.text || '', 'text');
+    html += propText('Return Type', s.returnType || 'void', 'returnType', 'e.g. void, String');
+    html += propText('Parameters', s.params || '', 'params', 'e.g. String name, int age');
+    html += propCheck('static',   'isStatic',   s.isStatic);
+    html += propCheck('abstract', 'isAbstract', s.isAbstract);
+
+  } else if (isConnectorShape(s.type)) {
+    const desc = s.type === 'extends'    ? 'Solid line → hollow arrowhead'
+               : s.type === 'implements' ? 'Dashed line → hollow arrowhead'
+               : 'Solid blue line → filled arrowhead';
+    html += `<p class="text-muted small mb-1">${desc}</p>`;
+  }
+
+  html += `<button class="btn btn-danger btn-sm w-100 mt-2" onclick="deleteSelectedShape()">Delete</button>`;
+  el.innerHTML = html;
+}
+
+function propText(label, value, prop, placeholder = '') {
+  return `<div class="mb-2">
+    <label class="form-label form-label-sm fw-semibold">${label}</label>
+    <input type="text" class="form-control form-control-sm" placeholder="${placeholder}"
+           value="${value.replace(/"/g, '&quot;')}"
+           oninput="updateProp('${prop}', this.value)">
+  </div>`;
+}
+function propVis(current) {
+  const opts = ['public', 'private', 'protected', 'package']
+    .map(v => `<option value="${v}" ${current === v ? 'selected' : ''}>${v}</option>`)
+    .join('');
+  return `<div class="mb-2">
+    <label class="form-label form-label-sm fw-semibold">Visibility</label>
+    <select class="form-select form-select-sm" onchange="updateProp('visibility', this.value)">${opts}</select>
+  </div>`;
+}
+function propCheck(label, prop, checked) {
+  return `<div class="form-check mb-1">
+    <input class="form-check-input" type="checkbox" id="cb_${prop}"
+           ${checked ? 'checked' : ''} onchange="updateProp('${prop}', this.checked)">
+    <label class="form-check-label" for="cb_${prop}">${label}</label>
+  </div>`;
+}
+
+function updateProp(prop, value) {
+  if (!selectedShape) return;
+  selectedShape[prop] = value;
+  redraw();
+  updateDOTPreview();
+}
+
+function deleteSelectedShape() {
+  if (!selectedShape) return;
+  // Also remove any connectors attached to this shape
+  shapes = shapes.filter(s => {
+    if (s === selectedShape) return false;
+    if (isConnectorShape(s.type) && (s.startNode === selectedShape || s.endNode === selectedShape)) return false;
+    return true;
+  });
+  selectedShape = null;
+  updatePropertyEditor();
+  redraw();
+  updateDOTPreview();
+}
+
+function clearCanvas() {
+  if (!confirm('Clear the canvas?')) return;
+  shapes = [];
+  selectedShape = null;
+  updatePropertyEditor();
+  redraw();
+  updateDOTPreview();
 }
 
 function exportToDOT() {
-   let dot = 'digraph G {\n';
-   dot += '  node [shape=record];\n';
-   dot += '  rankdir=TB;\n\n';
-      
-   const nodes = shapes.filter(s => s.type === 'circle' || s.type === 'rectangle');
-   const edges = shapes.filter(s => s.type === 'arrow' || s.type === 'line');
-      
-   // Export nodes
-   nodes.forEach(shape => {
-      const label = shape.text || `node${shape.id}`;
-      const shapeType = shape.type === 'circle' ? 'ellipse' : 'box';
-      const fillColor = shape.fillColor.replace('#', '');
-      const strokeColor = shape.strokeColor.replace('#', '');
-      dot += `  node${shape.id} [label="${label}", shape=${shapeType}, style=filled, fillcolor="#${fillColor}", color="#${strokeColor}", penwidth=${shape.lineWidth}];\n`;
-   });
-      
-   dot += '\n';
-      
-   // Export edges
-   edges.forEach(edge => {
-      if (edge.startNode && edge.endNode) {
-         const edgeOp = edge.type === 'arrow' ? '->' : '--';
-         const strokeColor = edge.strokeColor.replace('#', '');
-         const styleAttr = edge.lineStyle === 'dashed' ? ', style=dashed' : '';
-         dot += `  node${edge.startNode.id} ${edgeOp} node${edge.endNode.id} [color="#${strokeColor}", penwidth=${edge.lineWidth}${styleAttr}];\n`;
-      }
-   });
-      
-   dot += '}\n';
-      
-   // Download DOT file
-   const blob = new Blob([dot], { type: 'text/plain' });
-   const url = URL.createObjectURL(blob);
-   const a = document.createElement('a');
-   a.href = url;
-   a.download = 'diagram.dot';
-   a.click();
-   URL.revokeObjectURL(url);
-      
-   console.log('Exported DOT:\n', dot);
+  const dot  = shapesToBackendDOT();
+  const blob = new Blob([dot], { type: 'text/plain' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = 'diagram.dot';
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
-document.addEventListener('keydown', (e) => {
-   if (e.key === 'Backspace' && selectedShape) {
-      shapes = shapes.filter(s => s !== selectedShape);
-      selectedShape = null;
-      updatePropertyEditor();
-      redraw();
-      updateDOTPreview();
-   }
+// ── Keyboard shortcuts ────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selectedShape) {
+    deleteSelectedShape();
+  }
+  if (e.key === 'Escape') {
+    drawingConnection = false;
+    startConnectionPoint = null;
+    isDrawing = false;
+    redraw();
+  }
 });
 
-
-// Expose the current Diagriam from creator to comparer tab.
+// ── Diagram Comparer integration ───────────────────────────────────────
 window.getCurrentDiagram = function () {
-  const nodes = shapes.filter(s => s.type === 'circle' || s.type === 'rect');
-  const edges = shapes.filter(s => s.type === 'arrow' || s.type === 'line');
+  const classNodes = shapes.filter(s => s.type === 'class' || s.type === 'interface');
+  const connectors = shapes.filter(s => isConnectorShape(s.type));
 
-  const classes = [];
-  const relationships = [];
+  const classes = classNodes.map(n => ({ name: n.text || `node${n.id}` }));
 
-  nodes.forEach(shape => {
-    const label = shape.text || `node${shape.id}`;
-    classes.push({ name: label });
-  });
+  const relationships = connectors
+    .filter(c => c.startNode && c.endNode)
+    .map(c => ({
+      from: c.startNode.text || `node${c.startNode.id}`,
+      to:   c.endNode.text   || `node${c.endNode.id}`,
+      kind: c.type === 'extends'    ? 'Extends'
+          : c.type === 'implements' ? 'Implements'
+          : 'Association'
+    }));
 
-  edges.forEach(edge => {
-    let fromNode = null;
-    let toNode = null;
-
-    // find closet nodes
-    nodes.forEach(node => {
-      const centerX = node.x + node.width / 2;
-      const centerY = node.y + node.height / 2;
-
-      const distStart = Math.sqrt(
-        (edge.startX - centerX) ** 2 + (edge.startY - centerY) ** 2
-      );
-      const distEnd = Math.sqrt(
-        (edge.endX - centerX) ** 2 + (edge.endY - centerY) ** 2
-      );
-
-      if (distStart < 50 && !fromNode) fromNode = node;
-      if (distEnd < 50 && !toNode) toNode = node;
-    });
-
-    if (fromNode && toNode) {
-      const fromLabel = fromNode.text || `node${fromNode.id}`;
-      const toLabel = toNode.text || `node${toNode.id}`;
-
-      relationships.push({
-        from: fromLabel,
-        to: toLabel,
-        kind: "Association",
-      });
-    }
-  });
-  return {
-    classes,
-    relationships,
-  };
+  return { classes, relationships };
 };
