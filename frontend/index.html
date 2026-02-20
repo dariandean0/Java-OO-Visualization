@@ -189,7 +189,7 @@
                     };
                 }
 
-                async function update(){https://dariandean0.github.io/Java-OO-Visualization/frontend/
+                async function update(){
                     var dotCode = wasmVisualizeJavaCode(getEditorContent())
                 
                     Viz.instance().then(viz => {
@@ -337,8 +337,8 @@
                 </div>
             </div>
         </div>
-        
-        <div id="diagram-comparer-view" class="view">
+        <div id="Comparer" class="page">
+            <div id="diagram-comparer-view" class="view">
   <div style="padding: 8px 12px; font-weight: bold; font-size: 20px;">
     Diagram Comparer
   </div>
@@ -423,7 +423,9 @@
       ></ul>
     </div>
   </div>
-</div>
+            </div>
+        </div>
+
 
         <!--Pako-->
         <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
@@ -440,6 +442,7 @@
             const codeParam = urlParams.get('code')
             if (codeParam) {
                 EDITOR.setValue(decodeCode(codeParam))
+                update()
             }
         </script>
         
