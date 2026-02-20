@@ -189,7 +189,7 @@
                     };
                 }
 
-                async function update(){https://dariandean0.github.io/Java-OO-Visualization/frontend/
+                async function update(){
                     var dotCode = wasmVisualizeJavaCode(getEditorContent())
                 
                     Viz.instance().then(viz => {
@@ -442,6 +442,7 @@
             const codeParam = urlParams.get('code')
             if (codeParam) {
                 EDITOR.setValue(decodeCode(codeParam))
+                update()
             }
         </script>
         
