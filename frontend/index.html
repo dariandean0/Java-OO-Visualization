@@ -202,6 +202,7 @@
                 const debouncedUpdate = debounce(update, 500);
 
                 EDITOR.on("change", debouncedUpdate);
+                update();
 
                 //const generateButton = document.getElementById("generate")
                 //generateButton.addEventListener("click", async () => {
