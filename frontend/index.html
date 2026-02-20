@@ -442,6 +442,7 @@
             const codeParam = urlParams.get('code')
             if (codeParam) {
                 EDITOR.setValue(decodeCode(codeParam))
+                update()
             }
         </script>
         
