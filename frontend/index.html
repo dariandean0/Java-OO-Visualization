@@ -194,7 +194,13 @@
                 
                     Viz.instance().then(viz => {
                         const svg = viz.renderSVGElement(dotCode);
-                        document.getElementById('Graph').innerHTML = "<div class='p-2 fw-bold' style='background-color: #DDDDDD;'>Memory Diagram</div>";
+
+                        svg.removeAttribute("width");
+                        svg.removeAttribute("height");
+                        svg.style.width = "100%";
+                        svg.style.height = "auto";
+
+                        document.getElementById('Graph').innerHTML = "<div class='p-2 fw-bold' style='background-color: #DDDDDD;'>Memory Diagram</div>"; //What?
                         document.getElementById('Graph').appendChild(svg);
                     });
                 }
@@ -203,18 +209,6 @@
 
                 EDITOR.on("change", debouncedUpdate);
                 update();
-
-                //const generateButton = document.getElementById("generate")
-                //generateButton.addEventListener("click", async () => {
-                //    var dotCode = wasmVisualizeJavaCode(getEditorContent())
-                //    console.log(dotCode);
-                //
-                //    Viz.instance().then(viz => {
-                //    const svg = viz.renderSVGElement(dotCode);
-                //    document.getElementById('Graph').innerHTML = "<div class='p-2 fw-bold' style='background-color: #DDDDDD;'>Memory Diagram</div>";
-                //    document.getElementById('Graph').appendChild(svg);
-                //});
-                //})
             })();
         </script>
 
