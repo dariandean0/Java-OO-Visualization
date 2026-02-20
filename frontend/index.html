@@ -190,9 +190,8 @@
                     };
                 }
 
-                async function update(inc){
-                    var dotCode = wasmExecFlowGen(getEditorContent())[0 + inc]
-                    console.log(dotCode);
+                async function update(){
+                    var dotCode = wasmVisualizeJavaCode(getEditorContent())
                 
                     Viz.instance().then(viz => {
                         const svg = viz.renderSVGElement(dotCode);
@@ -209,7 +208,7 @@
 
                 const debouncedUpdate = debounce(update, 500);
 
-                EDITOR.on("change", debouncedUpdate(0));
+                EDITOR.on("change", debouncedUpdate);
             })();
         </script>
 
