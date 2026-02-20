@@ -14,8 +14,8 @@ let hoveredConnectionPoint = null;
 let startConnectionPoint = null;
 
 // Shape role groups
-const NODE_SHAPES      = ['class', 'interface', 'field', 'method-public', 'method-private', 'method-protected'];
-const CONNECTOR_SHAPES = ['extends', 'implements', 'calls'];
+const NODE_SHAPES      = ['class', 'interface', 'class-header', 'field', 'method-public', 'method-private', 'method-protected'];
+const CONNECTOR_SHAPES = ['extends', 'implements', 'calls', 'member-link'];
 
 function isNodeShape(type)      { return NODE_SHAPES.includes(type); }
 function isConnectorShape(type) { return CONNECTOR_SHAPES.includes(type); }
@@ -172,6 +172,7 @@ class Shape {
     switch (this.type) {
       case 'class':            this._drawClass();          break;
       case 'interface':        this._drawInterface();      break;
+      case 'class-header':     this._drawClassHeader();    break;
       case 'field':            this._drawField();          break;
       case 'method-public':
       case 'method-private':
@@ -179,6 +180,7 @@ class Shape {
       case 'extends':          this._drawExtendsArrow();   break;
       case 'implements':       this._drawImplementsArrow();break;
       case 'calls':            this._drawCallsArrow();     break;
+      case 'member-link':      this._drawMemberLink();     break;
     }
 
     ctx.shadowColor = 'transparent';
@@ -298,7 +300,40 @@ class Shape {
     ctx.fillText(lbl, this.x + TAB_W + 5, this.y + this.height / 2, this.width - TAB_W - 10);
   }
 
+  // ── Class-header ellipse node ─────────────────────────────
+  _drawClassHeader() {
+    const lbl = this.text || 'ClassName';
+    const cx  = this.x + this.width  / 2;
+    const cy  = this.y + this.height / 2;
+    const rx  = this.width  / 2;
+    const ry  = this.height / 2;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, 2 * Math.PI);
+    ctx.fillStyle   = '#add8e6';
+    ctx.fill();
+    ctx.strokeStyle = selectedShape === this ? '#0d6efd' : this.strokeColor;
+    ctx.lineWidth   = selectedShape === this ? 3 : 2;
+    ctx.stroke();
+    ctx.font         = 'bold 12px Arial';
+    ctx.fillStyle    = '#000';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(lbl, cx, cy, this.width - 10);
+  }
+
   // ── Connector draw methods ────────────────────────────────
+  _drawMemberLink() {
+    const { startX, startY, endX, endY } = this.getConnectorCoords();
+    ctx.setLineDash([7, 4]);
+    ctx.strokeStyle = selectedShape === this ? '#0d6efd' : '#555';
+    ctx.lineWidth   = selectedShape === this ? 3 : 1.5;
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    ctx.lineTo(endX, endY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
   _drawExtendsArrow() {
     const { startX, startY, endX, endY } = this.getConnectorCoords();
     const LEN = 18;
@@ -547,10 +582,12 @@ function _containedIn(inner, outer) {
 }
 
 function shapesToBackendDOT() {
-  const classNodes  = shapes.filter(s => s.type === 'class' || s.type === 'interface');
-  const fieldNodes  = shapes.filter(s => s.type === 'field');
-  const methodNodes = shapes.filter(s => s.type.startsWith('method-'));
-  const connectors  = shapes.filter(s => isConnectorShape(s.type));
+  const classNodes   = shapes.filter(s => s.type === 'class' || s.type === 'interface');
+  const headerNodes  = shapes.filter(s => s.type === 'class-header');
+  const fieldNodes   = shapes.filter(s => s.type === 'field');
+  const methodNodes  = shapes.filter(s => s.type.startsWith('method-'));
+  const connectors   = shapes.filter(s => isConnectorShape(s.type));
+  const memberLinks  = connectors.filter(s => s.type === 'member-link');
 
   let dot = 'digraph JavaClasses {\n';
   dot += '    rankdir=TB;\n';
@@ -567,8 +604,14 @@ function shapesToBackendDOT() {
     if (cls.type === 'interface') classLabel = `${rawName} (interface)`;
     else if (cls.isAbstract)     classLabel = `${rawName} (abstract)`;
 
-    const containedFields  = fieldNodes.filter(f => _containedIn(f, cls));
-    const containedMethods = methodNodes.filter(m => _containedIn(m, cls));
+    const containedFields   = fieldNodes.filter(f  => _containedIn(f,  cls));
+    const containedMethods  = methodNodes.filter(m  => _containedIn(m,  cls));
+    // Explicit class-header nodes placed inside this class box
+    const containedHeaders  = headerNodes.filter(h  => _containedIn(h,  cls));
+    // Use explicit header label if one is placed inside
+    const hdrLabel = containedHeaders.length > 0
+      ? (containedHeaders[0].text || classLabel)
+      : classLabel;
 
     dot += `    subgraph cluster_${clsId} {\n`;
     dot += `        label="${classLabel}";\n`;
@@ -576,7 +619,7 @@ function shapesToBackendDOT() {
     dot += `        color=lightgrey;\n`;
     dot += `        node [shape=box, style=filled, fillcolor=white];\n\n`;
 
-    dot += `        "${clsId}_class" [label="${classLabel}", shape=ellipse, style=filled, fillcolor=lightblue];\n`;
+    dot += `        "${clsId}_class" [label="${hdrLabel}", shape=ellipse, style=filled, fillcolor=lightblue];\n`;
 
     // Fields subgraph
     if (containedFields.length > 0) {
@@ -607,46 +650,105 @@ function shapesToBackendDOT() {
       dot += `        }\n`;
     }
 
-    // Internal connections: class_header → each field / method
-    containedFields.forEach(f => {
-      const fId = `${clsId}_${_sanitize(f.text || `f${f.id}`)}`;
-      dot += `        "${clsId}_class" -> "${fId}" [style=dashed, arrowhead=none];\n`;
-    });
-    containedMethods.forEach(m => {
-      const mId = `${clsId}_${_sanitize(m.text || `m${m.id}`)}`;
-      dot += `        "${clsId}_class" -> "${mId}" [style=dashed, arrowhead=none];\n`;
-    });
+    // Internal connections: class_header → each field / method.
+    // If explicit member-links exist from a contained header, use those;
+    // otherwise auto-connect all contained fields & methods.
+    const containedHeaderSet = new Set(containedHeaders);
+    const explicitLinks = memberLinks.filter(
+      l => l.startNode && containedHeaderSet.has(l.startNode) && _containedIn(l.startNode, cls)
+    );
+
+    if (explicitLinks.length > 0) {
+      // Only emit the member-links the user explicitly drew
+      explicitLinks.forEach(l => {
+        const targetNode = l.endNode;
+        if (!targetNode) return;
+        let targetId;
+        if (targetNode.type === 'field') {
+          targetId = `${clsId}_${_sanitize(targetNode.text || `f${targetNode.id}`)}`;
+        } else if (targetNode.type.startsWith('method-')) {
+          targetId = `${clsId}_${_sanitize(targetNode.text || `m${targetNode.id}`)}`;
+        } else {
+          targetId = `${_sanitize(targetNode.text || `node${targetNode.id}`)}_class`;
+        }
+        dot += `        "${clsId}_class" -> "${targetId}" [style=dashed, arrowhead=none];\n`;
+      });
+    } else {
+      // Auto-connect all contained fields & methods
+      containedFields.forEach(f => {
+        const fId = `${clsId}_${_sanitize(f.text || `f${f.id}`)}`;
+        dot += `        "${clsId}_class" -> "${fId}" [style=dashed, arrowhead=none];\n`;
+      });
+      containedMethods.forEach(m => {
+        const mId = `${clsId}_${_sanitize(m.text || `m${m.id}`)}`;
+        dot += `        "${clsId}_class" -> "${mId}" [style=dashed, arrowhead=none];\n`;
+      });
+    }
 
     dot += `    }\n\n`;
   });
 
-  // ── Inter-class relationships ──────────────────────────────
-  connectors.forEach(conn => {
-    if (!conn.startNode || !conn.endNode) return;
+  // ── Standalone class-header nodes not inside any class box ─
+  headerNodes
+    .filter(h => !classNodes.some(c => _containedIn(h, c)))
+    .forEach(h => {
+      const hId  = _sanitize(h.text || `hdr${h.id}`);
+      const lbl  = h.text || `hdr${h.id}`;
+      dot += `    "${hId}_class" [label="${lbl}", shape=ellipse, style=filled, fillcolor=lightblue];\n`;
+    });
 
-    if (conn.type === 'extends' || conn.type === 'implements') {
-      const fromId = `${_sanitize(conn.startNode.text || `node${conn.startNode.id}`)}_class`;
-      const toId   = `${_sanitize(conn.endNode.text   || `node${conn.endNode.id}`)}_class`;
-      if (conn.type === 'extends') {
-        dot += `    "${fromId}" -> "${toId}" [arrowhead=empty, style=solid, label=extends];\n`;
+  // ── Standalone member-link edges not inside any class box ──
+  memberLinks
+    .filter(l => l.startNode && l.endNode)
+    .filter(l => !classNodes.some(c => _containedIn(l.startNode, c)))
+    .forEach(l => {
+      const fromId = l.startNode.type === 'class-header'
+        ? `${_sanitize(l.startNode.text || `hdr${l.startNode.id}`)}_class`
+        : _sanitize(l.startNode.text || `node${l.startNode.id}`);
+      const toNode = l.endNode;
+      let toId;
+      if (toNode.type === 'field') {
+        const parent = classNodes.find(c => _containedIn(toNode, c));
+        const pName  = parent ? _sanitize(parent.text || `node${parent.id}`) : 'unknown';
+        toId = `${pName}_${_sanitize(toNode.text || `f${toNode.id}`)}`;
+      } else if (toNode.type.startsWith('method-')) {
+        const parent = classNodes.find(c => _containedIn(toNode, c));
+        const pName  = parent ? _sanitize(parent.text || `node${parent.id}`) : 'unknown';
+        toId = `${pName}_${_sanitize(toNode.text || `m${toNode.id}`)}`;
       } else {
-        dot += `    "${fromId}" -> "${toId}" [arrowhead=empty, style=dashed, label=implements];\n`;
+        toId = `${_sanitize(toNode.text || `node${toNode.id}`)}_class`;
       }
+      dot += `    "${fromId}" -> "${toId}" [style=dashed, arrowhead=none];\n`;
+    });
 
-    } else if (conn.type === 'calls') {
-      // Build node IDs: if from/to is a method, find its parent class
-      function methodNodeId(node) {
-        const parent = classNodes.find(c => _containedIn(node, c));
-        const pName  = parent ? _sanitize(parent.text || `node${parent.id}`) : _sanitize(node.text || `node${node.id}`);
-        return `${pName}_${_sanitize(node.text || `m${node.id}`)}`;
+  // ── Inter-class relationships ──────────────────────────────
+  connectors
+    .filter(conn => conn.type !== 'member-link')
+    .forEach(conn => {
+      if (!conn.startNode || !conn.endNode) return;
+
+      if (conn.type === 'extends' || conn.type === 'implements') {
+        const fromId = `${_sanitize(conn.startNode.text || `node${conn.startNode.id}`)}_class`;
+        const toId   = `${_sanitize(conn.endNode.text   || `node${conn.endNode.id}`)}_class`;
+        if (conn.type === 'extends') {
+          dot += `    "${fromId}" -> "${toId}" [arrowhead=empty, style=solid, label=extends];\n`;
+        } else {
+          dot += `    "${fromId}" -> "${toId}" [arrowhead=empty, style=dashed, label=implements];\n`;
+        }
+
+      } else if (conn.type === 'calls') {
+        function methodNodeId(node) {
+          const parent = classNodes.find(c => _containedIn(node, c));
+          const pName  = parent ? _sanitize(parent.text || `node${parent.id}`) : _sanitize(node.text || `node${node.id}`);
+          return `${pName}_${_sanitize(node.text || `m${node.id}`)}`;
+        }
+        const fromIsMethod = conn.startNode.type.startsWith('method-');
+        const toIsMethod   = conn.endNode.type.startsWith('method-');
+        const fromId = fromIsMethod ? methodNodeId(conn.startNode) : `${_sanitize(conn.startNode.text || `node${conn.startNode.id}`)}_class`;
+        const toId   = toIsMethod   ? methodNodeId(conn.endNode)   : `${_sanitize(conn.endNode.text   || `node${conn.endNode.id}`)}_class`;
+        dot += `    "${fromId}" -> "${toId}" [arrowhead=normal, style=solid, color=blue];\n`;
       }
-      const fromIsMethod = conn.startNode.type.startsWith('method-');
-      const toIsMethod   = conn.endNode.type.startsWith('method-');
-      const fromId = fromIsMethod ? methodNodeId(conn.startNode) : `${_sanitize(conn.startNode.text || `node${conn.startNode.id}`)}_class`;
-      const toId   = toIsMethod   ? methodNodeId(conn.endNode)   : `${_sanitize(conn.endNode.text   || `node${conn.endNode.id}`)}_class`;
-      dot += `    "${fromId}" -> "${toId}" [arrowhead=normal, style=solid, color=blue];\n`;
-    }
-  });
+    });
 
   dot += '}\n';
   return dot;
@@ -672,6 +774,9 @@ function updatePropertyEditor() {
     html += propText('Name', s.text || '', 'text');
     if (s.type === 'class') html += propCheck('Abstract', 'isAbstract', s.isAbstract);
 
+  } else if (s.type === 'class-header') {
+    html += propText('Label', s.text || '', 'text');
+
   } else if (s.type === 'field') {
     html += propText('Field Name', s.text || '', 'text');
     html += propText('Type', s.fieldType || '', 'fieldType', 'e.g. String, int');
@@ -687,8 +792,9 @@ function updatePropertyEditor() {
     html += propCheck('abstract', 'isAbstract', s.isAbstract);
 
   } else if (isConnectorShape(s.type)) {
-    const desc = s.type === 'extends'    ? 'Solid line → hollow arrowhead'
-               : s.type === 'implements' ? 'Dashed line → hollow arrowhead'
+    const desc = s.type === 'extends'     ? 'Solid line → hollow arrowhead'
+               : s.type === 'implements'  ? 'Dashed line → hollow arrowhead'
+               : s.type === 'member-link' ? 'Dashed line, no arrowhead (class header → member)'
                : 'Solid blue line → filled arrowhead';
     html += `<p class="text-muted small mb-1">${desc}</p>`;
   }
@@ -765,7 +871,14 @@ function exportToDOT() {
 
 // ── Keyboard shortcuts ────────────────────────────────────────
 document.addEventListener('keydown', e => {
+  // Never intercept keys while the user is typing in a form field
+  const tag = document.activeElement?.tagName?.toLowerCase();
+  const isEditingText = tag === 'input' || tag === 'textarea' || tag === 'select'
+                     || document.activeElement?.isContentEditable;
+  if (isEditingText) return;
+
   if ((e.key === 'Delete' || e.key === 'Backspace') && selectedShape) {
+    e.preventDefault();
     deleteSelectedShape();
   }
   if (e.key === 'Escape') {
