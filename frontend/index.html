@@ -208,7 +208,6 @@
                 const debouncedUpdate = debounce(update, 500);
 
                 EDITOR.on("change", debouncedUpdate);
-                update();
             })();
         </script>
 
@@ -218,8 +217,13 @@
                 <div class="row" style="height:94vh;">
                     <!--Code editor-->
                     <div class="col-6 d-flex flex-column" style="background-color: #FFFFFF; margin:0; padding:0;">
-                        <div class="p-2 fw-bold" style="background-color: #DDDDDD;">Java Code Editor</div>
+                        <div class="p-2 fw-bold" style="background-color: #DDDDDD;">
+                            Java Code Editor
+                            <button class="btn btn-outline-dark"><-</button>
+                            <button class="btn btn-outline-dark">-></button>
+                        </div>
                             <textarea id="codeArea">public static void main(String[] args) {}</textarea>
+
                     
                             <!--Add codemirror-->
                             <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/codemirror.min.js"></script>
@@ -248,7 +252,9 @@
                     <div id="Graph" class="col-6 d-flex flex-column" style="background-color: #FAFAFA; margin:0; padding:0;">
                         <div class="p-2 fw-bold" style="background-color: #DDDDDD;">Memory Diagram</div>
                     </div>
+                
                 </div>
+                
             </div>
         </div>
         <div id="Creator" class="page">
