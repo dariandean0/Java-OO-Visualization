@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
+use crate::model::{Class, Method};
 use crate::{Diagram, Mistake, analyze_mistakes};
-use crate::model::{Class, Method, Relationship, RelationshipKind};
 use regex::Regex;
 
 /// Build a "correct" Diagram from the source code.
@@ -14,8 +14,7 @@ use regex::Regex;
 /// That keeps your part isolated from the main parser work.
 fn diagram_from_code(source: &str) -> Diagram {
     // Matches: "class Animal" or "abstract class Animal"
-    let class_re =
-        Regex::new(r"\b(?:abstract\s+)?class\s+([A-Za-z_][A-Za-z0-9_]*)").unwrap();
+    let class_re = Regex::new(r"\b(?:abstract\s+)?class\s+([A-Za-z_][A-Za-z0-9_]*)").unwrap();
 
     // Very simple Java-like method pattern:
     // [visibility] [static] [return_type] methodName(
@@ -37,18 +36,18 @@ fn diagram_from_code(source: &str) -> Diagram {
         // 1) Detect class declarations
         if let Some(cap) = class_re.captures(line) {
             let class_name = cap[1].to_string();
-            classes.entry(class_name.clone()).or_insert_with(Vec::new);
+            classes.entry(class_name.clone()).or_default();
             current_class = Some(class_name);
             continue;
         }
 
         // 2) If we're "inside" a class, look for method signatures
-        if let Some(ref class_name) = current_class {
-            if let Some(cap) = method_re.captures(line) {
-                let method_name = cap[1].to_string();
-                if let Some(methods) = classes.get_mut(class_name) {
-                    methods.push(Method { name: method_name });
-                }
+        if let Some(ref class_name) = current_class
+            && let Some(cap) = method_re.captures(line)
+        {
+            let method_name = cap[1].to_string();
+            if let Some(methods) = classes.get_mut(class_name) {
+                methods.push(Method { name: method_name });
             }
         }
     }
@@ -71,5 +70,3 @@ pub fn compare_from_code_and_student(source_code: &str, student: &Diagram) -> Ve
     let correct = diagram_from_code(source_code);
     analyze_mistakes(&correct, student)
 }
-
-

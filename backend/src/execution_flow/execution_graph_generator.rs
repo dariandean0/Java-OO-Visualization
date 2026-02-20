@@ -1,28 +1,148 @@
 use super::ExecutionFlow;
 use super::execution_analyzer::{ExecutionAction, ExecutionStep};
+use crate::analyzer::{AnalysisResult, RelationshipType};
+use crate::no_flow;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone)]
 pub struct ExecutionGraphConfig {
-    pub show_line_numbers: bool,
     pub show_call_stack: bool,
     pub show_object_states: bool,
-    pub show_parameters: bool,
-    pub max_steps_per_graph: Option<usize>,
-    pub highlight_current_step: bool,
 }
 
 impl Default for ExecutionGraphConfig {
     fn default() -> Self {
         ExecutionGraphConfig {
-            show_line_numbers: true,
             show_call_stack: true,
             show_object_states: true,
-            show_parameters: true,
-            max_steps_per_graph: Some(10),
-            highlight_current_step: true,
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct VisibilityState {
+    pub visible_classes: HashSet<String>,
+    pub visible_fields: HashSet<(String, String)>,
+    pub visible_methods: HashSet<(String, String)>,
+    pub runtime_values: HashMap<(String, String), String>,
+}
+
+impl Default for VisibilityState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl VisibilityState {
+    pub fn new() -> Self {
+        VisibilityState {
+            visible_classes: HashSet::new(),
+            visible_fields: HashSet::new(),
+            visible_methods: HashSet::new(),
+            runtime_values: HashMap::new(),
+        }
+    }
+
+    pub fn update(&mut self, step: &ExecutionStep) {
+        match &step.action {
+            ExecutionAction::ObjectCreation { class_name, .. } => {
+                self.visible_classes.insert(class_name.clone());
+            }
+            ExecutionAction::MethodCall {
+                target_class,
+                method_name,
+                ..
+            } => {
+                self.visible_classes.insert(target_class.clone());
+                self.visible_methods
+                    .insert((target_class.clone(), method_name.clone()));
+            }
+            ExecutionAction::MethodEntry { .. } | ExecutionAction::MethodExit { .. } => {}
+            ExecutionAction::FieldAccess {
+                class_name,
+                field_name,
+                value,
+            } => {
+                self.visible_fields
+                    .insert((class_name.clone(), field_name.clone()));
+                if let Some(val) = value {
+                    self.runtime_values
+                        .insert((class_name.clone(), field_name.clone()), val.clone());
+                }
+            }
+            ExecutionAction::FieldMutation {
+                class_name,
+                field_name,
+                new_value,
+                ..
+            } => {
+                self.visible_fields
+                    .insert((class_name.clone(), field_name.clone()));
+                self.runtime_values
+                    .insert((class_name.clone(), field_name.clone()), new_value.clone());
+            }
+            ExecutionAction::VariableAssignment { .. }
+            | ExecutionAction::MethodReturn { .. }
+            | ExecutionAction::ConditionalBranch { .. }
+            | ExecutionAction::LoopIteration { .. } => {}
+        }
+    }
+
+    pub fn build_filtered_analysis(&self, full_analysis: &AnalysisResult) -> AnalysisResult {
+        let mut result = full_analysis.clone();
+
+        result
+            .classes
+            .retain(|c| self.visible_classes.contains(&c.name));
+
+        for class in &mut result.classes {
+            let class_name = class.name.clone();
+
+            class.fields.retain(|f| {
+                self.visible_fields
+                    .contains(&(class_name.clone(), f.name.clone()))
+            });
+
+            for field in &mut class.fields {
+                if let Some(val) = self
+                    .runtime_values
+                    .get(&(class_name.clone(), field.name.clone()))
+                {
+                    field.name = format!("{} = {}", field.name, val);
+                }
+            }
+
+            class.methods.retain(|m| {
+                self.visible_methods
+                    .contains(&(class_name.clone(), m.name.clone()))
+            });
+        }
+
+        result.relationships.retain(|r| match r.relationship_type {
+            RelationshipType::MethodCall | RelationshipType::Calls => {
+                let from_visible = if let Some((cls, meth)) = r.from.split_once('.') {
+                    self.visible_classes.contains(cls)
+                        && self
+                            .visible_methods
+                            .contains(&(cls.to_string(), meth.to_string()))
+                } else {
+                    self.visible_classes.contains(&r.from)
+                };
+                let to_visible = if let Some((cls, meth)) = r.to.split_once('.') {
+                    self.visible_classes.contains(cls)
+                        && self
+                            .visible_methods
+                            .contains(&(cls.to_string(), meth.to_string()))
+                } else {
+                    self.visible_classes.contains(&r.to)
+                };
+                from_visible && to_visible
+            }
+            _ => self.visible_classes.contains(&r.from) && self.visible_classes.contains(&r.to),
+        });
+
+        result
     }
 }
 
@@ -63,15 +183,31 @@ impl ExecutionGraphGenerator {
         ExecutionGraphGenerator { config }
     }
 
-    pub fn generate_execution_graphs(&self, flow: &ExecutionFlow) -> Vec<ExecutionGraphStep> {
+    pub fn generate_execution_graphs(
+        &self,
+        flow: &ExecutionFlow,
+        analysis: &AnalysisResult,
+    ) -> Vec<ExecutionGraphStep> {
         let mut graphs = Vec::new();
+        let mut visibility_state = VisibilityState::new();
         let mut cumulative_steps = Vec::new();
 
         for (i, step) in flow.steps.iter().enumerate() {
+            // Update visibility state
+            visibility_state.update(step);
             cumulative_steps.push(step.clone());
 
-            // Generate a graph for this step
-            let dot_code = self.generate_step_graph(&cumulative_steps, i + 1);
+            // Build filtered analysis for class diagram
+            let filtered = visibility_state.build_filtered_analysis(analysis);
+
+            // Generate class diagram DOT body using no_flow generator
+            let no_flow_gen = no_flow::GraphGenerator::new();
+            let class_diagram_content = no_flow_gen.generate_dot_body(&filtered);
+
+            // Build composed DOT
+            let dot_code =
+                self.build_composed_dot(i + 1, &class_diagram_content, &cumulative_steps, step);
+
             let execution_state = self.calculate_execution_state(&cumulative_steps);
 
             graphs.push(ExecutionGraphStep {
@@ -80,55 +216,98 @@ impl ExecutionGraphGenerator {
                 dot_code,
                 execution_state,
             });
-
-            // If we have a max steps limit, keep only recent steps for next iteration
-            if let Some(max_steps) = self.config.max_steps_per_graph
-                && cumulative_steps.len() > max_steps
-            {
-                cumulative_steps = cumulative_steps.into_iter().skip(1).collect();
-            }
         }
 
         graphs
     }
 
-    fn generate_step_graph(&self, steps: &[ExecutionStep], current_step: usize) -> String {
+    fn build_composed_dot(
+        &self,
+        step_number: usize,
+        class_diagram_content: &str,
+        steps: &[ExecutionStep],
+        current_step: &ExecutionStep,
+    ) -> String {
         let mut dot = String::new();
 
-        dot.push_str(&format!("digraph ExecutionFlow_{} {{\n", current_step));
+        dot.push_str(&format!("digraph ExecutionStep_{} {{\n", step_number));
         dot.push_str("    rankdir=TB;\n");
-        dot.push_str("    node [shape=box, fontname=\"Arial\"];\n");
+        dot.push_str("    fontname=\"Arial\";\n");
+        dot.push_str("    node [fontname=\"Arial\"];\n");
         dot.push_str("    edge [fontname=\"Arial\", fontsize=10];\n");
         dot.push_str("    compound=true;\n\n");
-
-        // Add title
         dot.push_str(&format!(
-            "    label=\"Execution Flow - Step {}\";\n",
-            current_step
+            "    label=\"Step {} | {}\";\n",
+            step_number,
+            self.escape_label(&current_step.source_line)
         ));
         dot.push_str("    labelloc=top;\n");
         dot.push_str("    fontsize=16;\n\n");
 
-        // Create call stack visualization
+        if !class_diagram_content.trim().is_empty() {
+            let highlighted = self.apply_highlights(class_diagram_content, current_step);
+            dot.push_str(&highlighted);
+            dot.push('\n');
+        }
+
+        // Supplementary panels
         if self.config.show_call_stack && !steps.is_empty() {
             dot.push_str(&self.generate_call_stack_subgraph(steps.last().unwrap()));
         }
 
-        // Create object state visualization
         if self.config.show_object_states {
             dot.push_str(&self.generate_object_state_subgraph(steps));
         }
 
-        // Create execution timeline
-        dot.push_str(&self.generate_execution_timeline(steps, current_step));
-
-        // Create connections between steps
-        if steps.len() > 1 {
-            dot.push_str(&self.generate_step_connections(steps));
-        }
-
         dot.push_str("}\n");
         dot
+    }
+
+    fn apply_highlights(&self, dot_content: &str, current_step: &ExecutionStep) -> String {
+        let mut highlight_ids: HashSet<String> = HashSet::new();
+
+        for entry in &current_step.call_stack {
+            if let Some((class, method)) = entry.split_once('.') {
+                highlight_ids.insert(format!("{}_{}", class, method));
+            }
+        }
+
+        match &current_step.action {
+            ExecutionAction::FieldAccess {
+                class_name,
+                field_name,
+                ..
+            }
+            | ExecutionAction::FieldMutation {
+                class_name,
+                field_name,
+                ..
+            } => {
+                highlight_ids.insert(format!("{}_{}", class_name, field_name));
+            }
+            _ => {}
+        }
+
+        let mut result = dot_content.to_string();
+
+        for element_id in &highlight_ids {
+            let field_prefix = format!("\"{}", element_id);
+            let lines: Vec<&str> = result.lines().collect();
+            let mut new_lines = Vec::new();
+            for line in lines {
+                if line.contains(&field_prefix) && (line.contains(" [") || line.contains(" = ")) {
+                    let modified = line
+                        .replace("fillcolor=lightyellow", "fillcolor=gold")
+                        .replace("fillcolor=lightgreen", "fillcolor=lime");
+                    new_lines.push(modified);
+                } else {
+                    new_lines.push(line.to_string());
+                }
+            }
+            result = new_lines.join("\n");
+        }
+
+        result
     }
 
     fn generate_call_stack_subgraph(&self, current_step: &ExecutionStep) -> String {
@@ -210,142 +389,6 @@ impl ExecutionGraphGenerator {
         subgraph
     }
 
-    fn generate_execution_timeline(&self, steps: &[ExecutionStep], current_step: usize) -> String {
-        let mut timeline = String::new();
-
-        timeline.push_str("    subgraph cluster_timeline {\n");
-        timeline.push_str("        label=\"Execution Timeline\";\n");
-        timeline.push_str("        style=filled;\n");
-        timeline.push_str("        fillcolor=lightyellow;\n");
-        timeline.push_str("        rankdir=LR;\n");
-
-        let start_idx = if steps.len() > 5 { steps.len() - 5 } else { 0 };
-
-        for (_i, step) in steps.iter().enumerate().skip(start_idx) {
-            let node_id = format!("step_{}", step.step_number);
-            let is_current = step.step_number == current_step;
-
-            let style = if is_current && self.config.highlight_current_step {
-                "filled, fillcolor=orange, color=red, penwidth=3"
-            } else {
-                "filled, fillcolor=white"
-            };
-
-            let label = self.format_step_label(step);
-
-            timeline.push_str(&format!(
-                "        {} [label=\"{}\", style=\"{}\", shape=box];\n",
-                node_id, label, style
-            ));
-        }
-
-        // Connect timeline steps
-        for i in start_idx..(steps.len() - 1) {
-            let from_step = steps[i].step_number;
-            let to_step = steps[i + 1].step_number;
-            timeline.push_str(&format!(
-                "        step_{} -> step_{} [color=gray];\n",
-                from_step, to_step
-            ));
-        }
-
-        timeline.push_str("    }\n\n");
-        timeline
-    }
-
-    fn generate_step_connections(&self, steps: &[ExecutionStep]) -> String {
-        let mut connections = String::new();
-
-        // Connect method calls to objects
-        for step in steps {
-            if let ExecutionAction::MethodCall {
-                caller: Some(caller_name),
-                method_name,
-                ..
-            } = &step.action
-            {
-                let obj_id = format!("obj_{}", self.sanitize_name(caller_name));
-                let step_id = format!("step_{}", step.step_number);
-                connections.push_str(&format!(
-                    "    {} -> {} [label=\"{}\", color=blue, style=dashed];\n",
-                    obj_id,
-                    step_id,
-                    self.escape_label(method_name)
-                ));
-            }
-        }
-
-        connections
-    }
-
-    fn format_step_label(&self, step: &ExecutionStep) -> String {
-        let mut label = String::new();
-
-        if self.config.show_line_numbers {
-            label.push_str(&format!("L{}\\n", step.line_number));
-        }
-
-        match &step.action {
-            ExecutionAction::ObjectCreation {
-                variable_name,
-                class_name,
-                ..
-            } => {
-                label.push_str(&format!("new {}\\n{}", class_name, variable_name));
-            }
-            ExecutionAction::MethodCall {
-                method_name,
-                parameters,
-                ..
-            } => {
-                if self.config.show_parameters && !parameters.is_empty() {
-                    let params = parameters.join(", ");
-                    label.push_str(&format!("{}({})\\n", method_name, params));
-                } else {
-                    label.push_str(&format!("{}()\\n", method_name));
-                }
-            }
-            ExecutionAction::VariableAssignment {
-                variable_name,
-                value,
-                ..
-            } => {
-                label.push_str(&format!("{} = {}\\n", variable_name, value));
-            }
-            ExecutionAction::MethodReturn { return_value, .. } => {
-                if let Some(val) = return_value {
-                    label.push_str(&format!("return {}\\n", val));
-                } else {
-                    label.push_str("return\\n");
-                }
-            }
-            ExecutionAction::ConditionalBranch {
-                condition,
-                branch_taken,
-            } => {
-                label.push_str(&format!(
-                    "if ({})\\n{}",
-                    condition,
-                    if *branch_taken { "true" } else { "false" }
-                ));
-            }
-            ExecutionAction::LoopIteration {
-                loop_type,
-                iteration,
-                ..
-            } => {
-                label.push_str(&format!("{} #{}\\n", loop_type, iteration));
-            }
-        }
-
-        // Remove trailing newline and escape
-        if label.ends_with("\\n") {
-            label.truncate(label.len() - 2);
-        }
-
-        self.escape_label(&label)
-    }
-
     fn calculate_execution_state(&self, steps: &[ExecutionStep]) -> ExecutionState {
         let mut objects_created = 0;
         let mut method_calls_made = 0;
@@ -378,7 +421,6 @@ impl ExecutionGraphGenerator {
         name.replace([' ', '.', '<', '>', '[', ']', '(', ')', '-', '+'], "_")
     }
 
-    #[allow(dead_code)]
     fn escape_label(&self, text: &str) -> String {
         text.replace('\"', "\\\"")
             .replace('{', "\\{")
@@ -391,6 +433,9 @@ impl ExecutionGraphGenerator {
 mod generator_tests {
     use super::super::execution_analyzer::{ExecutionAction, ExecutionStep};
     use super::*;
+    use crate::analyzer::{
+        AnalysisResult, JavaClass, JavaField, JavaMethod, Relationship, RelationshipType,
+    };
 
     #[test]
     fn execution_graph_generation() {
@@ -415,11 +460,250 @@ mod generator_tests {
             max_call_stack_depth: 1,
         };
 
+        let analysis = AnalysisResult {
+            classes: vec![JavaClass {
+                name: "Calculator".to_string(),
+                visibility: "public".to_string(),
+                is_abstract: false,
+                is_interface: false,
+                extends: None,
+                implements: vec![],
+                fields: vec![],
+                methods: vec![],
+                constructors: vec![],
+            }],
+            relationships: vec![],
+            object_registry: HashMap::new(),
+            type_inference: HashMap::new(),
+        };
+
         let generator = ExecutionGraphGenerator::new();
-        let graphs = generator.generate_execution_graphs(&flow);
+        let graphs = generator.generate_execution_graphs(&flow, &analysis);
 
         assert_eq!(graphs.len(), 1);
-        assert!(graphs[0].dot_code.contains("ExecutionFlow_1"));
+        assert!(graphs[0].dot_code.contains("ExecutionStep_1"));
         assert!(graphs[0].dot_code.contains("Calculator"));
+    }
+
+    // -- Helper builders for VisibilityState tests --
+
+    fn make_step(action: ExecutionAction) -> ExecutionStep {
+        ExecutionStep {
+            step_number: 1,
+            line_number: 1,
+            source_line: String::new(),
+            action,
+            call_stack: vec!["main".to_string()],
+            active_objects: vec![],
+            description: String::new(),
+        }
+    }
+
+    fn sample_analysis() -> AnalysisResult {
+        AnalysisResult {
+            classes: vec![
+                JavaClass {
+                    name: "Calculator".to_string(),
+                    visibility: "public".to_string(),
+                    is_abstract: false,
+                    is_interface: false,
+                    extends: None,
+                    implements: vec![],
+                    fields: vec![JavaField {
+                        name: "value".to_string(),
+                        field_type: "double".to_string(),
+                        visibility: "private".to_string(),
+                        is_static: false,
+                        is_final: false,
+                    }],
+                    methods: vec![JavaMethod {
+                        name: "add".to_string(),
+                        return_type: "void".to_string(),
+                        visibility: "public".to_string(),
+                        is_static: false,
+                        is_abstract: false,
+                        parameters: vec![],
+                        calls: vec![],
+                    }],
+                    constructors: vec![],
+                },
+                JavaClass {
+                    name: "Printer".to_string(),
+                    visibility: "public".to_string(),
+                    is_abstract: false,
+                    is_interface: false,
+                    extends: None,
+                    implements: vec![],
+                    fields: vec![],
+                    methods: vec![JavaMethod {
+                        name: "print".to_string(),
+                        return_type: "void".to_string(),
+                        visibility: "public".to_string(),
+                        is_static: false,
+                        is_abstract: false,
+                        parameters: vec![],
+                        calls: vec![],
+                    }],
+                    constructors: vec![],
+                },
+            ],
+            relationships: vec![Relationship {
+                from: "Calculator".to_string(),
+                to: "Printer".to_string(),
+                relationship_type: RelationshipType::Uses,
+            }],
+            object_registry: HashMap::new(),
+            type_inference: HashMap::new(),
+        }
+    }
+
+    // -- VisibilityState tests --
+
+    #[test]
+    fn object_creation_makes_class_visible() {
+        let mut state = VisibilityState::new();
+        let step = make_step(ExecutionAction::ObjectCreation {
+            variable_name: "calc".to_string(),
+            class_name: "Calculator".to_string(),
+            constructor_params: vec![],
+        });
+
+        state.update(&step);
+
+        assert!(state.visible_classes.contains("Calculator"));
+    }
+
+    #[test]
+    fn method_call_makes_method_visible() {
+        let mut state = VisibilityState::new();
+        let step = make_step(ExecutionAction::MethodCall {
+            caller: Some("calc".to_string()),
+            method_name: "add".to_string(),
+            target_class: "Calculator".to_string(),
+            parameters: vec!["5".to_string()],
+        });
+
+        state.update(&step);
+
+        assert!(state.visible_classes.contains("Calculator"));
+        assert!(
+            state
+                .visible_methods
+                .contains(&("Calculator".to_string(), "add".to_string()))
+        );
+    }
+
+    #[test]
+    fn field_mutation_adds_runtime_value() {
+        let mut state = VisibilityState::new();
+        let step = make_step(ExecutionAction::FieldMutation {
+            class_name: "Calculator".to_string(),
+            field_name: "value".to_string(),
+            old_value: None,
+            new_value: "5.0".to_string(),
+        });
+
+        state.update(&step);
+
+        assert!(
+            state
+                .visible_fields
+                .contains(&("Calculator".to_string(), "value".to_string()))
+        );
+        assert_eq!(
+            state
+                .runtime_values
+                .get(&("Calculator".to_string(), "value".to_string())),
+            Some(&"5.0".to_string())
+        );
+    }
+
+    #[test]
+    fn method_entry_exit_are_noop_on_visibility() {
+        let mut state = VisibilityState::new();
+
+        let enter = make_step(ExecutionAction::MethodEntry {
+            class_name: "Calculator".to_string(),
+            method_name: "add".to_string(),
+        });
+        state.update(&enter);
+
+        let exit = make_step(ExecutionAction::MethodExit {
+            class_name: "Calculator".to_string(),
+            method_name: "add".to_string(),
+            return_value: None,
+        });
+        state.update(&exit);
+
+        assert!(state.visible_classes.is_empty());
+        assert!(state.visible_fields.is_empty());
+        assert!(state.visible_methods.is_empty());
+    }
+
+    #[test]
+    fn build_filtered_analysis_returns_only_visible_elements() {
+        let mut state = VisibilityState::new();
+        let analysis = sample_analysis();
+
+        // Make only Calculator visible with its add method and value field
+        state.visible_classes.insert("Calculator".to_string());
+        state
+            .visible_methods
+            .insert(("Calculator".to_string(), "add".to_string()));
+        state
+            .visible_fields
+            .insert(("Calculator".to_string(), "value".to_string()));
+        state.runtime_values.insert(
+            ("Calculator".to_string(), "value".to_string()),
+            "5.0".to_string(),
+        );
+
+        let filtered = state.build_filtered_analysis(&analysis);
+
+        // Only Calculator class should remain
+        assert_eq!(filtered.classes.len(), 1);
+        assert_eq!(filtered.classes[0].name, "Calculator");
+
+        // Only the "add" method should remain
+        assert_eq!(filtered.classes[0].methods.len(), 1);
+        assert_eq!(filtered.classes[0].methods[0].name, "add");
+
+        // Only the "value" field, with runtime value appended
+        assert_eq!(filtered.classes[0].fields.len(), 1);
+        assert_eq!(filtered.classes[0].fields[0].name, "value = 5.0");
+
+        // Relationship between Calculator and Printer is gone (Printer not visible)
+        assert!(filtered.relationships.is_empty());
+    }
+
+    #[test]
+    fn relationships_visible_only_when_both_endpoints_visible() {
+        let mut state = VisibilityState::new();
+        let analysis = sample_analysis();
+
+        // Only one endpoint visible -> filtered analysis has no relationships
+        let step1 = make_step(ExecutionAction::ObjectCreation {
+            variable_name: "calc".to_string(),
+            class_name: "Calculator".to_string(),
+            constructor_params: vec![],
+        });
+        state.update(&step1);
+        let filtered = state.build_filtered_analysis(&analysis);
+        assert!(
+            filtered.relationships.is_empty(),
+            "Relationship should not appear with only one endpoint"
+        );
+
+        // Both endpoints visible -> relationship appears in filtered analysis
+        let step2 = make_step(ExecutionAction::ObjectCreation {
+            variable_name: "p".to_string(),
+            class_name: "Printer".to_string(),
+            constructor_params: vec![],
+        });
+        state.update(&step2);
+        let filtered = state.build_filtered_analysis(&analysis);
+        assert_eq!(filtered.relationships.len(), 1);
+        assert_eq!(filtered.relationships[0].from, "Calculator");
+        assert_eq!(filtered.relationships[0].to, "Printer");
     }
 }

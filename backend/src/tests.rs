@@ -579,11 +579,10 @@ public class FlowTest {
             assert!(graph.starts_with("digraph"));
             assert!(graph.ends_with("}\n"));
 
-            // Should contain expected execution flow elements
+            // Should contain call stack panel (new DOT format uses cluster_callstack)
             assert!(
-                graph
-                    .lines()
-                    .any(|line| line.contains("subgraph") || line.contains("->"))
+                graph.contains("cluster_callstack"),
+                "Each execution step should contain a call stack panel"
             );
         }
     }
@@ -635,6 +634,134 @@ public class ContentTest {
         // Should not contain field or method nodes with underscores
         assert!(!result.contains("Empty_field"));
         assert!(!result.contains("Empty_method"));
+    }
+
+    #[test]
+    fn test_incremental_reveal() {
+        let code = r#"
+public class TestExecution {
+    public static void main(String[] args) {
+        Calculator calc = new Calculator();
+        calc.add(5);
+        calc.add(3);
+        double result = calc.getResult();
+        System.out.println(result);
+    }
+}
+
+public class Calculator {
+    private double value;
+
+    public Calculator() {
+        this.value = 0.0;
+    }
+
+    public void add(double amount) {
+        this.value += amount;
+    }
+
+    public double getResult() {
+        return this.value;
+    }
+}
+"#;
+        let result = execution_flow_gen(code);
+
+        assert!(
+            result.len() > 8,
+            "Expected more than 8 steps with body stepping, got {}",
+            result.len()
+        );
+
+        for (i, graph) in result.iter().enumerate() {
+            assert!(
+                graph.starts_with("digraph"),
+                "Step {} should start with digraph",
+                i
+            );
+            assert!(graph.ends_with("}\n"), "Step {} should end with }}", i);
+        }
+
+        assert!(
+            result[0].contains("cluster_Calculator") || result[0].contains("Calculator"),
+            "First step should show Calculator class after ObjectCreation"
+        );
+
+        let last = result.last().unwrap();
+        assert!(
+            last.contains("cluster_Calculator"),
+            "Last step should contain Calculator class diagram"
+        );
+
+        for (i, graph) in result.iter().enumerate() {
+            assert!(
+                graph.contains("cluster_callstack"),
+                "Step {} should have call stack panel",
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn test_field_highlighting_with_runtime_values() {
+        let code = r#"
+public class TestExecution {
+    public static void main(String[] args) {
+        Calculator calc = new Calculator();
+        calc.add(5);
+    }
+}
+
+public class Calculator {
+    private double value;
+
+    public Calculator() {
+        this.value = 0.0;
+    }
+
+    public void add(double amount) {
+        this.value += amount;
+    }
+}
+"#;
+        let result = execution_flow_gen(code);
+
+        let has_value_field = result
+            .iter()
+            .any(|g| g.contains("value") && g.contains("0.0"));
+        assert!(
+            has_value_field,
+            "Some step should show the value field with runtime value 0.0"
+        );
+
+        let has_method_highlight = result.iter().any(|g| g.contains("fillcolor=lime"));
+        assert!(
+            has_method_highlight,
+            "Some step should have a highlighted method (fillcolor=lime)"
+        );
+    }
+
+    #[test]
+    fn test_jdk_methods_not_expanded() {
+        let code = r#"
+public class TestExecution {
+    public static void main(String[] args) {
+        System.out.println("Hello");
+    }
+}
+"#;
+        let result = execution_flow_gen(code);
+
+        for graph in &result {
+            assert!(
+                !graph.contains("cluster_System"),
+                "Should not have System class in diagram"
+            );
+            assert!(
+                !graph.contains("cluster_PrintStream"),
+                "Should not have PrintStream class in diagram"
+            );
+        }
     }
 }
 

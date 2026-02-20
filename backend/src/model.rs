@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// A high-level representation of an OO diagram.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,5 +39,3 @@ pub struct Relationship {
     pub to: String,
     pub kind: RelationshipKind,
 }
-
-
