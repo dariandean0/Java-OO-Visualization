@@ -179,6 +179,7 @@
                 );
 
 
+
                 //VizJS live update
 
                 function debounce(fn, delay){
@@ -189,8 +190,8 @@
                     };
                 }
 
-                async function update(){
-                    var dotCode = wasmVisualizeJavaCode(getEditorContent())
+                async function update(inc){
+                    var dotCode = wasmExecFlowGen(getEditorContent())[0 + inc]
                 
                     Viz.instance().then(viz => {
                         const svg = viz.renderSVGElement(dotCode);
@@ -207,7 +208,7 @@
 
                 const debouncedUpdate = debounce(update, 500);
 
-                EDITOR.on("change", debouncedUpdate);
+                EDITOR.on("change", debouncedUpdate(0));
             })();
         </script>
 
