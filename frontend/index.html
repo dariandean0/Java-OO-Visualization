@@ -192,6 +192,7 @@
 
                 async function update(inc){
                     var dotCode = wasmExecFlowGen(getEditorContent())[0 + inc]
+                    print(dotCode);
                 
                     Viz.instance().then(viz => {
                         const svg = viz.renderSVGElement(dotCode);
