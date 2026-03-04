@@ -1,8 +1,6 @@
 import Module from '../../wasm/backend.js';
 import * as Viz from 'https://cdn.jsdelivr.net/npm/@viz-js/viz@3.20.0/+esm'
 
-var currentLine = 0;
-
 (async () => {
     const mod = await Module();
 
@@ -52,10 +50,7 @@ var currentLine = 0;
             document.getElementById('Graph').innerHTML = "<div class='p-2 fw-bold' style='background-color: #DDDDDD;'>Memory Diagram</div>"; //What?
             document.getElementById('Graph').appendChild(svg);
         });
-
-        EDITOR.removeLineClass(currentLine, "background", "highlight-line");
-        currentLine = 0;
-        EDITOR.addLineClass(currentLine, "background", "highlight-line");
+        resetCurrentLine();
     }
 
     const debouncedUpdate = debounce(update, 500);
@@ -68,19 +63,4 @@ const urlParams = new URLSearchParams(window.location.search)
 const codeParam = urlParams.get('code')
 if (codeParam) {
     EDITOR.setValue(decodeCode(codeParam))
-}
-
-function nextLine() {
-    if (currentLine != EDITOR.lineCount() - 1) {
-        EDITOR.removeLineClass(currentLine, "background", "highlight-line");
-        currentLine++;
-        EDITOR.addLineClass(currentLine, "background", "highlight-line");
-    }
-}
-function lastLine() {
-    if (currentLine != 0 ) {
-        EDITOR.removeLineClass(currentLine, "background", "highlight-line");
-        currentLine--;
-        EDITOR.addLineClass(currentLine, "background", "highlight-line");
-    }
 }
