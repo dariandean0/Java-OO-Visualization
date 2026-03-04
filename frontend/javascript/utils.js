@@ -28,6 +28,7 @@ var currentLine = 0;
 function resetCurrentLine() {
     EDITOR.removeLineClass(currentLine, "background", "highlight-line");
     currentLine = 0;
+    EDITOR.addLineClass(currentLine, "background", "highlight-line");
 }
 
 function nextLine() {
