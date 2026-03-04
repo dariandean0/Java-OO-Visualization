@@ -8,104 +8,7 @@
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/codemirror.min.css">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/theme/darcula.min.css">
 
-        <style>
-            .CodeMirror{
-                width: 100%;
-                height: 100%;
-            }
-            
-            /* Diagram Creator Styles */
-            #diagramCanvas {
-                border: 1px solid #ccc;
-                background-color: white;
-                cursor: crosshair;
-                display: block;
-            }
-            
-            .tool-button {
-                width: 60px;
-                height: 60px;
-                margin: 5px;
-                border: 2px solid #dee2e6;
-                background-color: white;
-                cursor: pointer;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                transition: all 0.2s;
-                border-radius: 4px;
-            }
-            
-            .tool-button:hover {
-                background-color: #e9ecef;
-                border-color: #0d6efd;
-            }
-            
-            .tool-button.active {
-                background-color: #0d6efd;
-                border-color: #0d6efd;
-                color: white;
-            }
-            
-            .left-toolbar {
-                background-color: #f8f9fa;
-                padding: 10px;
-                border-right: 2px solid #dee2e6;
-                height: 94vh;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-            }
-            
-            .canvas-container {
-                overflow: auto;
-                height: 94vh;
-                background-color: #e9ecef;
-            }
-            
-            .right-panel {
-                height: 94vh;
-                display: flex;
-                flex-direction: column;
-                background-color: #f8f9fa;
-                border-left: 2px solid #dee2e6;
-            }
-            
-            .property-editor {
-                padding: 15px;
-                border-bottom: 2px solid #dee2e6;
-                flex: 0 0 auto;
-                max-height: 50%;
-                overflow-y: auto;
-            }
-
-            .dot-preview {
-                flex: 1;
-                display: flex;
-                flex-direction: column;
-                min-height: 0;
-            }
-            
-            .dot-preview-header {
-                padding: 10px 15px;
-                background-color: #e9ecef;
-                border-bottom: 1px solid #dee2e6;
-                font-weight: bold;
-            }
-            
-            .dot-preview-content {
-                flex: 1;
-                overflow-y: auto;
-                padding: 15px;
-                background-color: #fff;
-                font-family: 'Courier New', monospace;
-                font-size: 13px;
-                white-space: pre;
-            }
-
-            .page { display: none; }
-            .pactive { display: block; }
-        </style>
+        <link rel="stylesheet" href="css/stylesheet.css">
     </head>
     <body>
         <!-- Navbar -->
@@ -123,95 +26,6 @@
                 <button id="Export" type="button" onclick="exp()" class="btn btn-outline-success pagebutton ms-auto">Share</button>
             </div>
         </nav>
-        <!--Pages-->
-        <script>
-            function goTo(page){
-                document.querySelectorAll('.page').forEach(p => p.classList.remove('pactive'));
-                document.getElementById(page).classList.add('pactive');
-
-                document.querySelectorAll('.pagebutton').forEach(pb => {
-                    pb.classList.remove('btn-primary', 'btn-outline-primary');
-                    if (pb.id !== page + "B") {
-                        pb.classList.add('btn-outline-primary');
-                    } else {
-                        pb.classList.add('btn-primary');
-                    }
-                });
-            }
-            function encodeCode(code) {
-                return encodeURIComponent(pako.deflate(code).toBase64({ alphabet: "base64", omitPadding: true }))
-            }
-            function decodeCode(code) {
-                return pako.inflate(Uint8Array.fromBase64(decodeURIComponent(code)), { to: "string" })
-            }
-            function exp() {
-                var code = encodeCode(getEditorContent())
-                var url = location.origin + location.pathname + "?code=" + code
-                navigator.clipboard.writeText(url)
-                alert("Copied URL!")
-            }
-        </script>
-
-        <!--Import WASM-->
-        <script type="module">
-            import Module from '../wasm/backend.js';
-            import * as Viz from 'https://cdn.jsdelivr.net/npm/@viz-js/viz@3.20.0/+esm'
-
-            (async () => {
-                const mod = await Module();
-
-                const wasmExecFlowGen = mod.cwrap(
-                    'wasm_execution_flow_gen',
-                    'string',
-                    ['string']
-                );
-
-                const wasmNoFlowGen = mod.cwrap(
-                    'wasm_no_flow_gen',
-                    'string',
-                    ['string']
-                );
-
-                const wasmVisualizeJavaCode = mod.cwrap(
-                    'wasm_visualize_java_code',
-                    'string',
-                    ['string']
-                );
-
-
-
-                //VizJS live update
-
-                function debounce(fn, delay){
-                    var timeout;
-                    return (...args) => {
-                        clearTimeout(timeout);
-                        timeout = setTimeout(() => fn(...args), delay);
-                    };
-                }
-
-                async function update(){
-                    var dotCode = wasmVisualizeJavaCode(getEditorContent())
-                
-                    Viz.instance().then(viz => {
-                        const svg = viz.renderSVGElement(dotCode);
-
-                        svg.removeAttribute("width");
-                        svg.removeAttribute("height");
-                        svg.style.width = "100%";
-                        svg.style.height = "auto";
-
-                        document.getElementById('Graph').innerHTML = "<div class='p-2 fw-bold' style='background-color: #DDDDDD;'>Memory Diagram</div>"; //What?
-                        document.getElementById('Graph').appendChild(svg);
-                    });
-                }
-
-                const debouncedUpdate = debounce(update, 500);
-
-                EDITOR.on("change", debouncedUpdate);
-            })();
-        </script>
-
         <div id="Visualizer" class="page pactive">
             <!-- Code Editor & Diagram -->
             <div class="container-fluid">
@@ -432,20 +246,15 @@
         <!--Pako-->
         <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
 
-        <!--Diagram Creator Script-->
-        <script src="diagram-creator.js"></script>
+        <!--Scripts-->
+        <script src="javascript/diagram-creator.js"></script>
 
-	    <script src="diagram-comparer.js"></script>
+	    <script src="javascript/diagram-comparer.js"></script>
 
-        <!--At end so it runs once everything is loaded-->
-        <script>
-            // update from URL input
-            const urlParams = new URLSearchParams(window.location.search)
-            const codeParam = urlParams.get('code')
-            if (codeParam) {
-                EDITOR.setValue(decodeCode(codeParam))
-            }
-        </script>
+        <script src="javascript/utils.js"></script>
+
+        <script src="javascript/visualizer.js" type="module"></script>
+
         
         <!--Bootstrap-->
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>

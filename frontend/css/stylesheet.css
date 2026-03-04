@@ -1,0 +1,94 @@
+.CodeMirror{
+    width: 100%;
+    height: 100%;
+}
+
+/* Diagram Creator Styles */
+#diagramCanvas {
+    border: 1px solid #ccc;
+    background-color: white;
+    cursor: crosshair;
+    display: block;
+}
+
+.tool-button {
+    width: 60px;
+    height: 60px;
+    margin: 5px;
+    border: 2px solid #dee2e6;
+    background-color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    border-radius: 4px;
+}
+
+.tool-button:hover {
+    background-color: #e9ecef;
+    border-color: #0d6efd;
+}
+
+.tool-button.active {
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+    color: white;
+}
+
+.left-toolbar {
+    background-color: #f8f9fa;
+    padding: 10px;
+    border-right: 2px solid #dee2e6;
+    height: 94vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.canvas-container {
+    overflow: auto;
+    height: 94vh;
+    background-color: #e9ecef;
+}
+
+.right-panel {
+    height: 94vh;
+    display: flex;
+    flex-direction: column;
+    background-color: #f8f9fa;
+    border-left: 2px solid #dee2e6;
+}
+
+.property-editor {
+    padding: 15px;
+    border-bottom: 2px solid #dee2e6;
+    flex: 0 0 auto;
+    max-height: 50%;
+    overflow-y: auto;
+}
+.dot-preview {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.dot-preview-header {
+    padding: 10px 15px;
+    background-color: #e9ecef;
+    border-bottom: 1px solid #dee2e6;
+    font-weight: bold;
+}
+
+.dot-preview-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 15px;
+    background-color: #fff;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    white-space: pre;
+}
+.page { display: none; }
+.pactive { display: block; }
