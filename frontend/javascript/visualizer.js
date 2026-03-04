@@ -1,4 +1,4 @@
-import Module from '../wasm/backend.js';
+import Module from '../../wasm/backend.js';
 import * as Viz from 'https://cdn.jsdelivr.net/npm/@viz-js/viz@3.20.0/+esm'
 
 (async () => {
@@ -36,6 +36,8 @@ import * as Viz from 'https://cdn.jsdelivr.net/npm/@viz-js/viz@3.20.0/+esm'
 
     async function update() {
         var dotCode = wasmVisualizeJavaCode(getEditorContent())
+        //var dotCode = wasmExecFlowGen(getEditorContent());
+        console.log(dotCode);
 
         Viz.instance().then(viz => {
             const svg = viz.renderSVGElement(dotCode);
@@ -48,6 +50,7 @@ import * as Viz from 'https://cdn.jsdelivr.net/npm/@viz-js/viz@3.20.0/+esm'
             document.getElementById('Graph').innerHTML = "<div class='p-2 fw-bold' style='background-color: #DDDDDD;'>Memory Diagram</div>"; //What?
             document.getElementById('Graph').appendChild(svg);
         });
+        resetCurrentLine();
     }
 
     const debouncedUpdate = debounce(update, 500);

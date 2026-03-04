@@ -22,3 +22,26 @@ function exp() {
     navigator.clipboard.writeText(url)
     alert("Copied URL!")
 }
+
+var currentLine = 0;
+
+function resetCurrentLine() {
+    EDITOR.removeLineClass(currentLine, "background", "highlight-line");
+    currentLine = 0;
+    EDITOR.addLineClass(currentLine, "background", "highlight-line");
+}
+
+function nextLine() {
+    if (currentLine != EDITOR.lineCount() - 1) {
+        EDITOR.removeLineClass(currentLine, "background", "highlight-line");
+        currentLine++;
+        EDITOR.addLineClass(currentLine, "background", "highlight-line");
+    }
+}
+function prevLine() {
+    if (currentLine != 0 ) {
+        EDITOR.removeLineClass(currentLine, "background", "highlight-line");
+        currentLine--;
+        EDITOR.addLineClass(currentLine, "background", "highlight-line");
+    }
+}
