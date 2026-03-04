@@ -1,4 +1,4 @@
-import Module from '../wasm/backend.js';
+import Module from '../../wasm/backend.js';
 import * as Viz from 'https://cdn.jsdelivr.net/npm/@viz-js/viz@3.20.0/+esm'
 
 (async () => {
