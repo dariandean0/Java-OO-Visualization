@@ -36,7 +36,7 @@ import * as Viz from 'https://cdn.jsdelivr.net/npm/@viz-js/viz@3.20.0/+esm'
 
     async function update() {
         //var dotCode = wasmVisualizeJavaCode(getEditorContent())
-        var dotCode = wasmExecFlowGen(getEditorContent);
+        var dotCode = wasmExecFlowGen(getEditorContent());
         console.log(dotCode);
 
         Viz.instance().then(viz => {
