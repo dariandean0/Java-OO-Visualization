@@ -263,17 +263,11 @@ impl GraphGenerator {
                         relationship.to.replace('.', "_")
                     ));
                 }
-                RelationshipType::Calls => {
-                    if self.config.show_method_calls {
-                        relationships
-                            .push_str(&self.generate_method_call_relationship(relationship));
-                    }
+                RelationshipType::Calls if self.config.show_method_calls => {
+                    relationships.push_str(&self.generate_method_call_relationship(relationship));
                 }
-                RelationshipType::MethodCall => {
-                    if self.config.show_method_calls {
-                        relationships
-                            .push_str(&self.generate_method_call_relationship(relationship));
-                    }
+                RelationshipType::MethodCall if self.config.show_method_calls => {
+                    relationships.push_str(&self.generate_method_call_relationship(relationship));
                 }
                 _ => {}
             }
