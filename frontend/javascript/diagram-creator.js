@@ -13,6 +13,24 @@ let nextShapeId = 1;
 let hoveredConnectionPoint = null;
 let startConnectionPoint = null;
 
+// ── View transform (zoom & pan) ───────────────────────────────
+let viewScale   = 1;
+let viewOffsetX = 0;
+let viewOffsetY = 0;
+let isPanning   = false;
+let hasPanned   = false;   // true once pointer has moved past the dead-zone threshold
+let panStartX   = 0;
+let panStartY   = 0;
+
+function screenToCanvas(sx, sy) {
+  return { x: (sx - viewOffsetX) / viewScale, y: (sy - viewOffsetY) / viewScale };
+}
+
+function resetView() {
+  viewScale = 1; viewOffsetX = 0; viewOffsetY = 0;
+  redraw();
+}
+
 // Shape role groups
 const NODE_SHAPES      = ['class', 'interface', 'class-header', 'field', 'method-public', 'method-private', 'method-protected'];
 const CONNECTOR_SHAPES = ['extends', 'implements', 'calls', 'member-link'];
@@ -407,22 +425,77 @@ document.querySelectorAll('.tool-button').forEach(button => {
     document.querySelectorAll('.tool-button').forEach(b => b.classList.remove('active'));
     this.classList.add('active');
     currentTool = this.dataset.tool;
-    if (canvas) canvas.style.cursor = currentTool === 'select' ? 'default' : 'crosshair';
+    if (canvas && !isPanning) canvas.style.cursor = currentTool === 'select' ? 'default' : 'crosshair';
   });
 });
 
 // ── Canvas event handlers ─────────────────────────────────────
 if (canvas) {
+  // Resize canvas to fill its container
+  const canvasContainer = canvas.parentElement;
+  function fitCanvas() {
+    const w = canvasContainer.clientWidth;
+    const h = canvasContainer.clientHeight;
+    if (w === 0 || h === 0) return; // page is hidden, skip
+    canvas.width  = w;
+    canvas.height = h;
+    redraw();
+  }
+  // Expose so goTo('Creator') can trigger a re-fit after the page becomes visible
+  window.fitCreatorCanvas = fitCanvas;
+  fitCanvas();
+  window.addEventListener('resize', fitCanvas);
+
   canvas.addEventListener('mousedown', handleMouseDown);
   canvas.addEventListener('mousemove', handleMouseMove);
   canvas.addEventListener('mouseup',   handleMouseUp);
   canvas.addEventListener('dblclick',  handleDoubleClick);
+
+  // Prevent middle-mouse scroll / autoscroll popup
+  canvas.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });
+  canvas.addEventListener('auxclick',  e => e.preventDefault());
+
+  // Wheel zoom
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    const rect   = canvas.getBoundingClientRect();
+    const mx     = e.clientX - rect.left;
+    const my     = e.clientY - rect.top;
+    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+    viewOffsetX  = mx + (viewOffsetX - mx) * factor;
+    viewOffsetY  = my + (viewOffsetY - my) * factor;
+    viewScale    = Math.max(0.1, Math.min(8, viewScale * factor));
+    redraw();
+  }, { passive: false });
+
+  // Stop panning even if mouse is released outside the canvas
+  window.addEventListener('mouseup', e => {
+    if (isPanning && (e.button === 1 || e.button === 0)) {
+      isPanning = false;
+      canvas.style.cursor = currentTool === 'select' ? 'default' : 'crosshair';
+    }
+  });
 }
 
 function handleMouseDown(e) {
   const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
+  const sx   = e.clientX - rect.left;
+  const sy   = e.clientY - rect.top;
+
+  // Middle-mouse → pan
+  if (e.button === 1) {
+    e.preventDefault();
+    isPanning  = true;
+    hasPanned  = false;
+    panStartX  = e.clientX;
+    panStartY  = e.clientY;
+    canvas.style.cursor = 'grabbing';
+    return;
+  }
+
+  if (e.button !== 0) return;
+
+  const { x, y } = screenToCanvas(sx, sy);
 
   if (currentTool === 'select') {
     for (let i = shapes.length - 1; i >= 0; i--) {
@@ -436,9 +509,12 @@ function handleMouseDown(e) {
         return;
       }
     }
-    selectedShape = null;
-    updatePropertyEditor();
-    redraw();
+    // Clicked empty space — start pan; deselect on mouseup only if pointer didn't move
+    isPanning  = true;
+    hasPanned  = false;
+    panStartX  = e.clientX;
+    panStartY  = e.clientY;
+    canvas.style.cursor = 'grabbing';
 
   } else if (isConnectorShape(currentTool)) {
     // Try to start from a connection point
@@ -462,9 +538,26 @@ function handleMouseDown(e) {
 }
 
 function handleMouseMove(e) {
-  const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
+  // Handle pan
+  if (isPanning) {
+    const dx = e.clientX - panStartX;
+    const dy = e.clientY - panStartY;
+    if (!hasPanned && Math.hypot(dx, dy) > 3) hasPanned = true;
+    if (hasPanned) {
+      viewOffsetX += dx;
+      viewOffsetY += dy;
+      panStartX    = e.clientX;
+      panStartY    = e.clientY;
+      canvas.style.cursor = 'grabbing';
+      redraw();
+    }
+    return;
+  }
+
+  const rect       = canvas.getBoundingClientRect();
+  const sx         = e.clientX - rect.left;
+  const sy         = e.clientY - rect.top;
+  const { x, y }  = screenToCanvas(sx, sy);
 
   // Update hovered connection point
   hoveredConnectionPoint = null;
@@ -488,6 +581,8 @@ function handleMouseMove(e) {
     updateDOTPreview();
   } else if (drawingConnection || isDrawing) {
     redraw();
+    // Draw the preview line in world-space (transform already applied)
+    ctx.setTransform(viewScale, 0, 0, viewScale, viewOffsetX, viewOffsetY);
     ctx.strokeStyle = '#888';
     ctx.lineWidth   = 1;
     ctx.setLineDash([5, 5]);
@@ -496,13 +591,28 @@ function handleMouseMove(e) {
     ctx.lineTo(x, y);
     ctx.stroke();
     ctx.setLineDash([]);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
   }
 }
 
 function handleMouseUp(e) {
-  const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
+  if (isPanning) {
+    isPanning = false;
+    if (!hasPanned) {
+      // Treat as a plain click on empty space → deselect
+      selectedShape = null;
+      updatePropertyEditor();
+      redraw();
+    }
+    hasPanned = false;
+    canvas.style.cursor = currentTool === 'select' ? 'default' : 'crosshair';
+    return;
+  }
+
+  const rect      = canvas.getBoundingClientRect();
+  const sx        = e.clientX - rect.left;
+  const sy        = e.clientY - rect.top;
+  const { x, y } = screenToCanvas(sx, sy);
 
   if (drawingConnection) {
     for (const shape of shapes) {
@@ -550,7 +660,15 @@ function handleMouseUp(e) {
 }
 
 function handleDoubleClick(e) {
+  const rect      = canvas.getBoundingClientRect();
+  const sx        = e.clientX - rect.left;
+  const sy        = e.clientY - rect.top;
+  const { x, y } = screenToCanvas(sx, sy);
+
   if (!selectedShape || !isNodeShape(selectedShape.type)) return;
+  // Confirm double-click landed on the selected shape (world-space hit test)
+  if (!selectedShape.contains(x, y)) return;
+
   const lbl = selectedShape.type.startsWith('method') ? 'Method name:'
             : selectedShape.type === 'field'           ? 'Field name:'
             : 'Class / Interface name:';
@@ -565,8 +683,11 @@ function handleDoubleClick(e) {
 
 function redraw() {
   if (!ctx) return;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.setTransform(viewScale, 0, 0, viewScale, viewOffsetX, viewOffsetY);
   shapes.forEach(s => s.draw());
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
 
 // ── DOT generation ────────────────────────────────────────────
@@ -871,7 +992,6 @@ function exportToDOT() {
 
 // ── Keyboard shortcuts ────────────────────────────────────────
 document.addEventListener('keydown', e => {
-  // Never intercept keys while the user is typing in a form field
   const tag = document.activeElement?.tagName?.toLowerCase();
   const isEditingText = tag === 'input' || tag === 'textarea' || tag === 'select'
                      || document.activeElement?.isContentEditable;
@@ -887,7 +1007,13 @@ document.addEventListener('keydown', e => {
     isDrawing = false;
     redraw();
   }
+  // Ctrl+0 = reset view
+  if (e.key === '0' && e.ctrlKey) {
+    e.preventDefault();
+    resetView();
+  }
 });
+
 
 // ── Diagram Comparer integration ───────────────────────────────────────
 window.getCurrentDiagram = function () {

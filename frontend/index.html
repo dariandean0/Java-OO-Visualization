@@ -192,6 +192,7 @@
 
                             <!-- ── Actions ── -->
                             <div class="tool-section-label" style="margin-top:auto;">Actions</div>
+                            <button class="btn btn-sm btn-secondary w-100 mb-1" onclick="resetView()" title="Ctrl+0">Reset View</button>
                             <button class="btn btn-sm btn-danger w-100 mb-1" onclick="clearCanvas()">Clear Canvas</button>
                             <button class="btn btn-sm btn-success w-100" onclick="exportToDOT()">Export DOT</button>
 
@@ -200,7 +201,7 @@
                     
                     <!-- Center Canvas -->
                     <div class="col canvas-container">
-                        <canvas id="diagramCanvas" width="2000" height="2000"></canvas>
+                        <canvas id="diagramCanvas"></canvas>
                     </div>
                     <!-- Right Panel -->
                     <div class="col-3 right-panel">

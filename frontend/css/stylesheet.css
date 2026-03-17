@@ -9,7 +9,6 @@
 
 /* Diagram Creator Styles */
 #diagramCanvas {
-    border: 1px solid #ccc;
     background-color: white;
     cursor: crosshair;
     display: block;
@@ -70,9 +69,10 @@
 }
 
 .canvas-container {
-    overflow: auto;
+    overflow: hidden;
     height: 94vh;
     background-color: #e9ecef;
+    position: relative;
 }
 
 .right-panel {

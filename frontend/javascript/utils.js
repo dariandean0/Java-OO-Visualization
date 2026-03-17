@@ -9,6 +9,10 @@
             pb.classList.add('btn-primary');
         }
     });
+    // Re-fit the creator canvas now that it is visible
+    if (page === 'Creator' && typeof fitCreatorCanvas === 'function') {
+        fitCreatorCanvas();
+    }
 }
 function encodeCode(code) {
     return encodeURIComponent(pako.deflate(code).toBase64({ alphabet: "base64", omitPadding: true }))
