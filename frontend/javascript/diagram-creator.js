@@ -990,6 +990,25 @@ function exportToDOT() {
   URL.revokeObjectURL(url);
 }
 
+function exportToImage(format) {
+  const mimeType = format === 'jpeg' ? 'image/jpeg' : 'image/png';
+  const quality  = format === 'jpeg' ? 0.92 : undefined;
+
+  // Composite the live canvas onto a white background (required for JPEG, good for PNG)
+  const snapshot = document.createElement('canvas');
+  snapshot.width  = canvas.width;
+  snapshot.height = canvas.height;
+  const snapCtx = snapshot.getContext('2d');
+  snapCtx.fillStyle = '#ffffff';
+  snapCtx.fillRect(0, 0, snapshot.width, snapshot.height);
+  snapCtx.drawImage(canvas, 0, 0);
+
+  const a   = document.createElement('a');
+  a.href     = snapshot.toDataURL(mimeType, quality);
+  a.download = `diagram.${format}`;
+  a.click();
+}
+
 // ── Keyboard shortcuts ────────────────────────────────────────
 document.addEventListener('keydown', e => {
   const tag = document.activeElement?.tagName?.toLowerCase();
