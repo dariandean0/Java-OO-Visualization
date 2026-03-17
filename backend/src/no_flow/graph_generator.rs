@@ -1,5 +1,7 @@
-use crate::analyzer::AnalysisResult;
-use crate::repr::{JavaClass, JavaField, JavaMethod, Relationship, RelationshipType};
+use crate::{
+    analyzer::AnalysisResult,
+    repr::{JavaClass, JavaField, JavaMethod, Relationship, RelationshipType},
+};
 
 pub struct GraphGenerator {
     config: GraphConfig,

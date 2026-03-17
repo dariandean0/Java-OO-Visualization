@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{Diagram, Mistake, compare_from_code_and_student};
+use crate::{api::compare_from_code_and_student, mistake::Mistake, repr::Diagram};
 
 #[derive(Debug, Deserialize)]
 pub struct CompareRequest {

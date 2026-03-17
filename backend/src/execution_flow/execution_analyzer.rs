@@ -1,5 +1,4 @@
-use crate::analyzer::AnalysisResult;
-use crate::parser::node_text;
+use crate::{analyzer::AnalysisResult, parser::node_text};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tree_sitter::Node;

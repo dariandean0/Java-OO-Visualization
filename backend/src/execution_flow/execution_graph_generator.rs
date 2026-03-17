@@ -1,8 +1,8 @@
-use super::ExecutionFlow;
-use super::execution_analyzer::{ExecutionAction, ExecutionStep};
-use crate::analyzer::AnalysisResult;
-use crate::no_flow;
-use crate::repr::RelationshipType;
+use super::{
+    ExecutionFlow,
+    execution_analyzer::{ExecutionAction, ExecutionStep},
+};
+use crate::{analyzer::AnalysisResult, no_flow, repr::RelationshipType};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 

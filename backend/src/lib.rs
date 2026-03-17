@@ -14,13 +14,8 @@ pub mod repr;
 mod tests;
 
 use analyzer::JavaAnalyzer;
-pub use api::compare_from_code_and_student;
-pub use compare::analyze_mistakes;
-pub use http_api::{CompareRequest, CompareResponse, handle_compare};
-pub use mistake::{Mistake, MistakeKind};
 use no_flow::GraphGenerator;
 use parser::JavaParser;
-pub use repr::{Diagram, JavaClass, Relationship, RelationshipType};
 
 //use wasm_bindgen::prelude::*;
 pub fn execution_flow_gen(java_code: &str) -> Vec<String> {

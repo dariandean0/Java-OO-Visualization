@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
-use crate::repr::{JavaClass, JavaMethod};
-use crate::{Diagram, Mistake, analyze_mistakes};
+use crate::{
+    compare::analyze_mistakes,
+    mistake::Mistake,
+    repr::{Diagram, JavaClass, JavaMethod},
+};
 use regex::Regex;
 
 /// Build a "correct" Diagram from the source code.

@@ -1,10 +1,12 @@
-use crate::analyzer::{AnalysisResult, JavaAnalyzer};
-use crate::no_flow::GraphConfig;
-use crate::no_flow::GraphGenerator;
-use crate::parser::JavaParser;
-use crate::repr::RelationshipType;
-use crate::visualizer::{JavaVisualizer, visualize_java_code};
-use crate::{execution_flow_gen, no_flow_gen};
+use crate::{
+    analyzer::{AnalysisResult, JavaAnalyzer},
+    execution_flow_gen,
+    no_flow::{GraphConfig, GraphGenerator},
+    no_flow_gen,
+    parser::JavaParser,
+    repr::RelationshipType,
+    visualizer::{JavaVisualizer, visualize_java_code},
+};
 
 /// Test helper to parse and analyze Java code
 fn analyze_java_code(code: &str) -> AnalysisResult {
