@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::model::{Class, Method};
+use crate::repr::{JavaClass, JavaMethod};
 use crate::{Diagram, Mistake, analyze_mistakes};
 use regex::Regex;
 
@@ -29,7 +29,7 @@ fn diagram_from_code(source: &str) -> Diagram {
     .unwrap();
 
     // Map from class name -> list of methods
-    let mut classes: HashMap<String, Vec<Method>> = HashMap::new();
+    let mut classes: HashMap<String, Vec<JavaMethod>> = HashMap::new();
     let mut current_class: Option<String> = None;
 
     for line in source.lines() {
@@ -47,15 +47,26 @@ fn diagram_from_code(source: &str) -> Diagram {
         {
             let method_name = cap[1].to_string();
             if let Some(methods) = classes.get_mut(class_name) {
-                methods.push(Method { name: method_name });
+                methods.push(JavaMethod {
+                    name: method_name,
+
+                    // TODO! fill out all these other fields? - Simon
+                    ..Default::default()
+                });
             }
         }
     }
 
     // Convert HashMap<String, Vec<Method>> into our Diagram model
-    let class_vec: Vec<Class> = classes
+    let class_vec: Vec<JavaClass> = classes
         .into_iter()
-        .map(|(name, methods)| Class { name, methods })
+        .map(|(name, methods)| JavaClass {
+            name,
+            methods,
+
+            // TODO! fill out all these other fields? - Simon
+            ..Default::default()
+        })
         .collect();
 
     Diagram {

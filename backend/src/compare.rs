@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::mistake::{Mistake, MistakeKind};
-use crate::model::{Diagram, Relationship};
+use crate::repr::{Diagram, Relationship};
 
 /// Compare the correct diagram and the student drawn diagran.
 /// and return a list of mistakes found in the student diagram.
