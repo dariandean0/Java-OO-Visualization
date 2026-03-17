@@ -22,6 +22,42 @@ let hasPanned   = false;   // true once pointer has moved past the dead-zone thr
 let panStartX   = 0;
 let panStartY   = 0;
 
+// ── Resize state ──────────────────────────────────────────────
+let isResizing    = false;
+let resizeHandle  = null;   // 'nw'|'n'|'ne'|'e'|'se'|'s'|'sw'|'w'
+let resizeOrigX   = 0, resizeOrigY  = 0;
+let resizeOrigW   = 0, resizeOrigH  = 0;
+let resizeStartX  = 0, resizeStartY = 0;
+
+const RESIZE_CURSORS = {
+  nw: 'nw-resize', n: 'n-resize',  ne: 'ne-resize',
+  e:  'e-resize',  se: 'se-resize', s: 's-resize',
+  sw: 'sw-resize', w: 'w-resize'
+};
+
+function getResizeHandles(shape) {
+  const { x, y, width: w, height: h } = shape;
+  return {
+    nw: { x,           y           },
+    n:  { x: x + w/2,  y           },
+    ne: { x: x + w,    y           },
+    e:  { x: x + w,    y: y + h/2  },
+    se: { x: x + w,    y: y + h    },
+    s:  { x: x + w/2,  y: y + h    },
+    sw: { x,           y: y + h    },
+    w:  { x,           y: y + h/2  },
+  };
+}
+
+function findResizeHandle(shape, x, y) {
+  if (!isNodeShape(shape.type)) return null;
+  const threshold = 7 / viewScale;
+  for (const [name, pt] of Object.entries(getResizeHandles(shape))) {
+    if (Math.hypot(x - pt.x, y - pt.y) < threshold) return name;
+  }
+  return null;
+}
+
 function screenToCanvas(sx, sy) {
   return { x: (sx - viewOffsetX) / viewScale, y: (sy - viewOffsetY) / viewScale };
 }
@@ -136,6 +172,20 @@ class Shape {
     });
   }
 
+  drawResizeHandles() {
+    const r = 5 / viewScale;  // constant screen-space size
+    const lw = 1 / viewScale;
+    Object.values(getResizeHandles(this)).forEach(pt => {
+      ctx.beginPath();
+      ctx.rect(pt.x - r, pt.y - r, r * 2, r * 2);
+      ctx.fillStyle   = '#ffffff';
+      ctx.fill();
+      ctx.strokeStyle = '#0d6efd';
+      ctx.lineWidth   = lw;
+      ctx.stroke();
+    });
+  }
+
   // ── Connector helpers ─────────────────────────────────────
   getConnectorCoords() {
     let sX, sY, eX, eY;
@@ -204,8 +254,12 @@ class Shape {
     ctx.shadowColor = 'transparent';
     ctx.shadowBlur  = 0;
 
-    if (isNodeShape(this.type) && (selectedShape === this || isConnectorShape(currentTool))) {
-      this.drawConnectionPoints(selectedShape === this);
+    if (isNodeShape(this.type)) {
+      if (selectedShape === this && currentTool === 'select') {
+        this.drawResizeHandles();
+      } else if (isConnectorShape(currentTool)) {
+        this.drawConnectionPoints(selectedShape === this);
+      }
     }
   }
 
@@ -468,8 +522,13 @@ if (canvas) {
     redraw();
   }, { passive: false });
 
-  // Stop panning even if mouse is released outside the canvas
+  // Stop panning / resizing even if mouse is released outside the canvas
   window.addEventListener('mouseup', e => {
+    if (isResizing && e.button === 0) {
+      isResizing = false; resizeHandle = null;
+      canvas.style.cursor = 'default';
+      updateDOTPreview();
+    }
     if (isPanning && (e.button === 1 || e.button === 0)) {
       isPanning = false;
       canvas.style.cursor = currentTool === 'select' ? 'default' : 'crosshair';
@@ -498,6 +557,22 @@ function handleMouseDown(e) {
   const { x, y } = screenToCanvas(sx, sy);
 
   if (currentTool === 'select') {
+    // Check resize handles on selected shape first
+    if (selectedShape && isNodeShape(selectedShape.type)) {
+      const handle = findResizeHandle(selectedShape, x, y);
+      if (handle) {
+        isResizing   = true;
+        resizeHandle = handle;
+        resizeOrigX  = selectedShape.x;
+        resizeOrigY  = selectedShape.y;
+        resizeOrigW  = selectedShape.width;
+        resizeOrigH  = selectedShape.height;
+        resizeStartX = x;
+        resizeStartY = y;
+        canvas.style.cursor = RESIZE_CURSORS[handle];
+        return;
+      }
+    }
     for (let i = shapes.length - 1; i >= 0; i--) {
       if (shapes[i].contains(x, y)) {
         selectedShape  = shapes[i];
@@ -559,9 +634,25 @@ function handleMouseMove(e) {
   const sy         = e.clientY - rect.top;
   const { x, y }  = screenToCanvas(sx, sy);
 
+  // Handle active resize
+  if (isResizing && selectedShape) {
+    const MIN = 20;
+    const dx = x - resizeStartX;
+    const dy = y - resizeStartY;
+    let nx = resizeOrigX, ny = resizeOrigY, nw = resizeOrigW, nh = resizeOrigH;
+    if (resizeHandle.includes('e')) nw = Math.max(MIN, resizeOrigW + dx);
+    if (resizeHandle.includes('s')) nh = Math.max(MIN, resizeOrigH + dy);
+    if (resizeHandle.includes('w')) { nw = Math.max(MIN, resizeOrigW - dx); nx = resizeOrigX + resizeOrigW - nw; }
+    if (resizeHandle.includes('n')) { nh = Math.max(MIN, resizeOrigH - dy); ny = resizeOrigY + resizeOrigH - nh; }
+    selectedShape.x = nx; selectedShape.y = ny;
+    selectedShape.width = nw; selectedShape.height = nh;
+    redraw();
+    return;
+  }
+
   // Update hovered connection point
   hoveredConnectionPoint = null;
-  if (isConnectorShape(currentTool) || currentTool === 'select') {
+  if (isConnectorShape(currentTool)) {
     for (const shape of shapes) {
       if (!isNodeShape(shape.type)) continue;
       const pt = shape.findConnectionPoint(x, y);
@@ -571,6 +662,16 @@ function handleMouseMove(e) {
         if (!isDragging && !isDrawing && !drawingConnection) redraw();
         break;
       }
+    }
+  }
+
+  // Update cursor when hovering over resize handles of selected shape
+  if (currentTool === 'select' && selectedShape && isNodeShape(selectedShape.type) && !isDragging) {
+    const handle = findResizeHandle(selectedShape, x, y);
+    if (handle) {
+      canvas.style.cursor = RESIZE_CURSORS[handle];
+    } else if (!hoveredConnectionPoint) {
+      canvas.style.cursor = 'default';
     }
   }
 
@@ -596,6 +697,14 @@ function handleMouseMove(e) {
 }
 
 function handleMouseUp(e) {
+  if (isResizing) {
+    isResizing   = false;
+    resizeHandle = null;
+    canvas.style.cursor = 'default';
+    updateDOTPreview();
+    return;
+  }
+
   if (isPanning) {
     isPanning = false;
     if (!hasPanned) {
