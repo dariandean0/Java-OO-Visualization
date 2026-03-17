@@ -22,6 +22,14 @@ let hasPanned   = false;   // true once pointer has moved past the dead-zone thr
 let panStartX   = 0;
 let panStartY   = 0;
 
+// ── Multi-select state ────────────────────────────────────────
+let selectedShapes   = [];     // shapes in the current group selection
+let lassoRect        = null;   // {x,y,w,h} world-coords while drawing lasso
+let isMultiDragging  = false;
+let multiDragOrigins = [];     // [{shape, ox, oy}] original positions when drag started
+let multiDragStartX  = 0;
+let multiDragStartY  = 0;
+
 // ── Resize state ──────────────────────────────────────────────
 let isResizing    = false;
 let resizeHandle  = null;   // 'nw'|'n'|'ne'|'e'|'se'|'s'|'sw'|'w'
@@ -233,9 +241,11 @@ class Shape {
 
   // ── Main draw dispatcher ──────────────────────────────────
   draw() {
-    ctx.lineWidth   = selectedShape === this ? this.lineWidth + 1 : this.lineWidth;
+    const inGroup = selectedShapes.includes(this);
+    ctx.lineWidth   = (selectedShape === this || inGroup) ? this.lineWidth + 1 : this.lineWidth;
     ctx.strokeStyle = this.strokeColor;
-    if (selectedShape === this) { ctx.shadowColor = '#0d6efd'; ctx.shadowBlur = 10; }
+    if      (selectedShape === this) { ctx.shadowColor = '#0d6efd'; ctx.shadowBlur = 10; }
+    else if (inGroup)                { ctx.shadowColor = '#fd7e14'; ctx.shadowBlur = 8;  }
 
     switch (this.type) {
       case 'class':            this._drawClass();          break;
@@ -522,8 +532,14 @@ if (canvas) {
     redraw();
   }, { passive: false });
 
-  // Stop panning / resizing even if mouse is released outside the canvas
+  // Stop panning / resizing / lasso even if mouse is released outside the canvas
   window.addEventListener('mouseup', e => {
+    if (isMultiDragging && e.button === 0) {
+      isMultiDragging = false; multiDragOrigins = [];
+      canvas.style.cursor = 'default';
+      updateDOTPreview();
+    }
+    if (lassoRect && e.button === 0) { lassoRect = null; redraw(); }
     if (isResizing && e.button === 0) {
       isResizing = false; resizeHandle = null;
       canvas.style.cursor = 'default';
@@ -556,9 +572,9 @@ function handleMouseDown(e) {
 
   const { x, y } = screenToCanvas(sx, sy);
 
-  if (currentTool === 'select') {
-    // Check resize handles on selected shape first
-    if (selectedShape && isNodeShape(selectedShape.type)) {
+  if (currentTool === 'select' || currentTool === 'lasso') {
+    // Check resize handles on single-selected shape first (select tool only)
+    if (currentTool === 'select' && selectedShape && isNodeShape(selectedShape.type)) {
       const handle = findResizeHandle(selectedShape, x, y);
       if (handle) {
         isResizing   = true;
@@ -573,23 +589,49 @@ function handleMouseDown(e) {
         return;
       }
     }
-    for (let i = shapes.length - 1; i >= 0; i--) {
-      if (shapes[i].contains(x, y)) {
-        selectedShape  = shapes[i];
-        isDragging     = true;
-        dragOffsetX    = x - selectedShape.x;
-        dragOffsetY    = y - selectedShape.y;
-        updatePropertyEditor();
-        redraw();
+
+    // Check if clicking on a shape in the current group → start group drag
+    if (selectedShapes.length > 0) {
+      const hit = [...shapes].reverse().find(s => selectedShapes.includes(s) && s.contains(x, y));
+      if (hit) {
+        isMultiDragging  = true;
+        multiDragStartX  = x;
+        multiDragStartY  = y;
+        multiDragOrigins = selectedShapes.map(s => ({ shape: s, ox: s.x, oy: s.y }));
+        canvas.style.cursor = 'move';
         return;
       }
     }
-    // Clicked empty space — start pan; deselect on mouseup only if pointer didn't move
-    isPanning  = true;
-    hasPanned  = false;
-    panStartX  = e.clientX;
-    panStartY  = e.clientY;
-    canvas.style.cursor = 'grabbing';
+
+    // In select mode: check shape hit for single selection
+    if (currentTool === 'select') {
+      for (let i = shapes.length - 1; i >= 0; i--) {
+        if (shapes[i].contains(x, y)) {
+          selectedShapes = [];
+          selectedShape  = shapes[i];
+          isDragging     = true;
+          dragOffsetX    = x - selectedShape.x;
+          dragOffsetY    = y - selectedShape.y;
+          updatePropertyEditor();
+          redraw();
+          return;
+        }
+      }
+      // Clicked empty space — clear group, start pan
+      selectedShapes = [];
+      isPanning  = true;
+      hasPanned  = false;
+      panStartX  = e.clientX;
+      panStartY  = e.clientY;
+      canvas.style.cursor = 'grabbing';
+
+    } else {
+      // Lasso tool — start drawing selection rect
+      selectedShape  = null;
+      selectedShapes = [];
+      lassoRect = { x, y, w: 0, h: 0 };
+      updatePropertyEditor();
+    }
 
   } else if (isConnectorShape(currentTool)) {
     // Try to start from a connection point
@@ -633,6 +675,23 @@ function handleMouseMove(e) {
   const sx         = e.clientX - rect.left;
   const sy         = e.clientY - rect.top;
   const { x, y }  = screenToCanvas(sx, sy);
+
+  // Handle group drag
+  if (isMultiDragging) {
+    const dx = x - multiDragStartX;
+    const dy = y - multiDragStartY;
+    multiDragOrigins.forEach(({ shape, ox, oy }) => { shape.x = ox + dx; shape.y = oy + dy; });
+    redraw();
+    return;
+  }
+
+  // Update lasso rect
+  if (lassoRect) {
+    lassoRect.w = x - lassoRect.x;
+    lassoRect.h = y - lassoRect.y;
+    redraw();
+    return;
+  }
 
   // Handle active resize
   if (isResizing && selectedShape) {
@@ -697,6 +756,35 @@ function handleMouseMove(e) {
 }
 
 function handleMouseUp(e) {
+  if (isMultiDragging) {
+    isMultiDragging  = false;
+    multiDragOrigins = [];
+    canvas.style.cursor = 'default';
+    updateDOTPreview();
+    return;
+  }
+
+  if (lassoRect) {
+    // Normalise rect so w/h are always positive
+    const rx = lassoRect.w >= 0 ? lassoRect.x : lassoRect.x + lassoRect.w;
+    const ry = lassoRect.h >= 0 ? lassoRect.y : lassoRect.y + lassoRect.h;
+    const rw = Math.abs(lassoRect.w);
+    const rh = Math.abs(lassoRect.h);
+    lassoRect = null;
+
+    if (rw > 4 && rh > 4) {
+      selectedShapes = shapes.filter(s => {
+        if (!isNodeShape(s.type)) return false;
+        // shape must be fully inside the lasso rect
+        return s.x >= rx && s.y >= ry && s.x + s.width <= rx + rw && s.y + s.height <= ry + rh;
+      });
+      selectedShape = null;
+      updatePropertyEditor();
+    }
+    redraw();
+    return;
+  }
+
   if (isResizing) {
     isResizing   = false;
     resizeHandle = null;
@@ -796,6 +884,18 @@ function redraw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.setTransform(viewScale, 0, 0, viewScale, viewOffsetX, viewOffsetY);
   shapes.forEach(s => s.draw());
+  // Draw lasso selection rect
+  if (lassoRect) {
+    ctx.strokeStyle = '#0d6efd';
+    ctx.lineWidth   = 1 / viewScale;
+    ctx.setLineDash([6 / viewScale, 3 / viewScale]);
+    ctx.fillStyle   = 'rgba(13,110,253,0.08)';
+    ctx.beginPath();
+    ctx.rect(lassoRect.x, lassoRect.y, lassoRect.w, lassoRect.h);
+    ctx.fill();
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
 
@@ -993,6 +1093,11 @@ function updateDOTPreview() {
 function updatePropertyEditor() {
   const el = document.getElementById('propertyEditorContent');
   if (!el) return;
+  if (selectedShapes.length > 0) {
+    el.innerHTML = `<p class="text-muted"><small>${selectedShapes.length} shapes selected</small></p>
+      <button class="btn btn-danger btn-sm w-100 mt-2" onclick="deleteSelectedGroup()">Delete Group</button>`;
+    return;
+  }
   if (!selectedShape) {
     el.innerHTML = '<p class="text-muted"><small>Select a shape to edit its properties</small></p>';
     return;
@@ -1065,6 +1170,20 @@ function updateProp(prop, value) {
   updateDOTPreview();
 }
 
+function deleteSelectedGroup() {
+  if (selectedShapes.length === 0) return;
+  const toDelete = new Set(selectedShapes);
+  shapes = shapes.filter(s => {
+    if (toDelete.has(s)) return false;
+    if (isConnectorShape(s.type) && (toDelete.has(s.startNode) || toDelete.has(s.endNode))) return false;
+    return true;
+  });
+  selectedShapes = [];
+  updatePropertyEditor();
+  redraw();
+  updateDOTPreview();
+}
+
 function deleteSelectedShape() {
   if (!selectedShape) return;
   // Also remove any connectors attached to this shape
@@ -1082,7 +1201,8 @@ function deleteSelectedShape() {
 function clearCanvas() {
   if (!confirm('Clear the canvas?')) return;
   shapes = [];
-  selectedShape = null;
+  selectedShape  = null;
+  selectedShapes = [];
   updatePropertyEditor();
   redraw();
   updateDOTPreview();
@@ -1125,9 +1245,9 @@ document.addEventListener('keydown', e => {
                      || document.activeElement?.isContentEditable;
   if (isEditingText) return;
 
-  if ((e.key === 'Delete' || e.key === 'Backspace') && selectedShape) {
-    e.preventDefault();
-    deleteSelectedShape();
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (selectedShapes.length > 0) { e.preventDefault(); deleteSelectedGroup(); }
+    else if (selectedShape)        { e.preventDefault(); deleteSelectedShape(); }
   }
   if (e.key === 'Escape') {
     drawingConnection = false;
