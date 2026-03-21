@@ -1,8 +1,10 @@
-use crate::analyzer::{AnalysisResult, JavaAnalyzer};
-use crate::execution_flow::{ExecutionAnalyzer, ExecutionFlow};
-use crate::execution_flow::{ExecutionGraphConfig, ExecutionGraphGenerator, ExecutionGraphStep};
-use crate::no_flow::{GraphConfig, GraphGenerator};
-use crate::parser::JavaParser;
+use crate::{
+    analyzer::{AnalysisResult, JavaAnalyzer},
+    execution_flow::{ExecutionAnalyzer, ExecutionFlow},
+    execution_flow::{ExecutionGraphConfig, ExecutionGraphGenerator, ExecutionGraphStep},
+    no_flow::{GraphConfig, GraphGenerator},
+    parser::JavaParser,
+};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 

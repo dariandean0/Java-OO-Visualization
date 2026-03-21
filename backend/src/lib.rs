@@ -8,19 +8,15 @@ pub mod api;
 pub mod compare;
 pub mod http_api;
 pub mod mistake;
-pub mod model;
+pub mod repr;
 
 #[cfg(test)]
 mod tests;
 
 use analyzer::JavaAnalyzer;
-pub use api::compare_from_code_and_student;
-pub use compare::analyze_mistakes;
-pub use http_api::{CompareRequest, CompareResponse, handle_compare};
-pub use mistake::{Mistake, MistakeKind};
-pub use model::{Class, Diagram, Relationship, RelationshipKind};
 use no_flow::GraphGenerator;
 use parser::JavaParser;
+
 //use wasm_bindgen::prelude::*;
 pub fn execution_flow_gen(java_code: &str) -> Vec<String> {
     let mut visualizer = visualizer::JavaVisualizer::new().unwrap();

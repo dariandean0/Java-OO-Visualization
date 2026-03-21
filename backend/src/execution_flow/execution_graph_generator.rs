@@ -1,7 +1,8 @@
-use super::ExecutionFlow;
-use super::execution_analyzer::{ExecutionAction, ExecutionStep};
-use crate::analyzer::{AnalysisResult, RelationshipType};
-use crate::no_flow;
+use super::{
+    ExecutionFlow,
+    execution_analyzer::{ExecutionAction, ExecutionStep},
+};
+use crate::{analyzer::AnalysisResult, no_flow, repr::RelationshipType};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -119,7 +120,7 @@ impl VisibilityState {
             });
         }
 
-        result.relationships.retain(|r| match r.relationship_type {
+        result.relationships.retain(|r| match r.kind {
             RelationshipType::MethodCall | RelationshipType::Calls => {
                 let from_visible = if let Some((cls, meth)) = r.from.split_once('.') {
                     self.visible_classes.contains(cls)
@@ -462,9 +463,8 @@ impl ExecutionGraphGenerator {
 mod generator_tests {
     use super::super::execution_analyzer::{ExecutionAction, ExecutionStep};
     use super::*;
-    use crate::analyzer::{
-        AnalysisResult, JavaClass, JavaField, JavaMethod, Relationship, RelationshipType,
-    };
+    use crate::analyzer::AnalysisResult;
+    use crate::repr::{JavaClass, JavaField, JavaMethod, Relationship, RelationshipType};
 
     #[test]
     fn execution_graph_generation() {
@@ -579,7 +579,7 @@ mod generator_tests {
             relationships: vec![Relationship {
                 from: "Calculator".to_string(),
                 to: "Printer".to_string(),
-                relationship_type: RelationshipType::Uses,
+                kind: RelationshipType::Uses,
             }],
             object_registry: HashMap::new(),
             type_inference: HashMap::new(),

@@ -1,5 +1,6 @@
-use crate::analyzer::{
-    AnalysisResult, JavaClass, JavaField, JavaMethod, Relationship, RelationshipType,
+use crate::{
+    analyzer::AnalysisResult,
+    repr::{JavaClass, JavaField, JavaMethod, Relationship, RelationshipType},
 };
 
 pub struct GraphGenerator {
@@ -247,7 +248,7 @@ impl GraphGenerator {
         let mut relationships = String::new();
 
         for relationship in &analysis.relationships {
-            match relationship.relationship_type {
+            match relationship.kind {
                 RelationshipType::Extends => {
                     relationships.push_str(&format!(
                         "    \"{}_class\" -> \"{}_class\" [arrowhead=empty, style=solid, label=extends];\n",
@@ -262,17 +263,11 @@ impl GraphGenerator {
                         relationship.to.replace('.', "_")
                     ));
                 }
-                RelationshipType::Calls => {
-                    if self.config.show_method_calls {
-                        relationships
-                            .push_str(&self.generate_method_call_relationship(relationship));
-                    }
+                RelationshipType::Calls if self.config.show_method_calls => {
+                    relationships.push_str(&self.generate_method_call_relationship(relationship));
                 }
-                RelationshipType::MethodCall => {
-                    if self.config.show_method_calls {
-                        relationships
-                            .push_str(&self.generate_method_call_relationship(relationship));
-                    }
+                RelationshipType::MethodCall if self.config.show_method_calls => {
+                    relationships.push_str(&self.generate_method_call_relationship(relationship));
                 }
                 _ => {}
             }

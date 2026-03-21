@@ -1,9 +1,12 @@
-use crate::analyzer::{AnalysisResult, JavaAnalyzer, RelationshipType};
-use crate::no_flow::GraphConfig;
-use crate::no_flow::GraphGenerator;
-use crate::parser::JavaParser;
-use crate::visualizer::{JavaVisualizer, visualize_java_code};
-use crate::{execution_flow_gen, no_flow_gen};
+use crate::{
+    analyzer::{AnalysisResult, JavaAnalyzer},
+    execution_flow_gen,
+    no_flow::{GraphConfig, GraphGenerator},
+    no_flow_gen,
+    parser::JavaParser,
+    repr::RelationshipType,
+    visualizer::{JavaVisualizer, visualize_java_code},
+};
 
 /// Test helper to parse and analyze Java code
 fn analyze_java_code(code: &str) -> AnalysisResult {
@@ -129,7 +132,7 @@ public class Cat extends Animal {}
         let extends_relationships: Vec<_> = result
             .relationships
             .iter()
-            .filter(|r| matches!(r.relationship_type, RelationshipType::Extends))
+            .filter(|r| matches!(r.kind, RelationshipType::Extends))
             .collect();
 
         assert_eq!(extends_relationships.len(), 2);
@@ -178,7 +181,7 @@ public class Circle implements Drawable {
         let implements_relationships: Vec<_> = result
             .relationships
             .iter()
-            .filter(|r| matches!(r.relationship_type, RelationshipType::Implements))
+            .filter(|r| matches!(r.kind, RelationshipType::Implements))
             .collect();
 
         assert_eq!(implements_relationships.len(), 1);
@@ -233,7 +236,7 @@ class Calculator {
         let method_calls: Vec<_> = result
             .relationships
             .iter()
-            .filter(|r| matches!(r.relationship_type, RelationshipType::MethodCall))
+            .filter(|r| matches!(r.kind, RelationshipType::MethodCall))
             .collect();
 
         assert_eq!(method_calls.len(), 3);
@@ -270,7 +273,7 @@ public class StaticCalls {
         let method_calls: Vec<_> = result
             .relationships
             .iter()
-            .filter(|r| matches!(r.relationship_type, RelationshipType::MethodCall))
+            .filter(|r| matches!(r.kind, RelationshipType::MethodCall))
             .collect();
 
         // Should detect static method calls
