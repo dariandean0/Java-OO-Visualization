@@ -38,7 +38,7 @@ import panzoom from 'https://cdn.jsdelivr.net/npm/panzoom@9.4.3/+esm'
     async function update() {
         var dotCode = wasmVisualizeJavaCode(getEditorContent())
         //var dotCode = wasmExecFlowGen(getEditorContent());
-        console.log(dotCode);
+        //console.log(dotCode);
 
         Viz.instance().then(viz => {
             const svg = viz.renderSVGElement(dotCode);

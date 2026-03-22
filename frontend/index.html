@@ -34,8 +34,10 @@
                     <div class="col-6 d-flex flex-column" style="background-color: #FAFAFA; margin:0; padding:0;">
                         <div class="p-2 fw-bold" style="background-color: #DDDDDD;">
                             Java Code Editor
-                            <button class="p-1 btn btn-outline-dark" onclick="prevLine()"><-</button>
-                            <button class="p-1 btn btn-outline-dark" onclick="nextLine()">-></button>
+                        </div>
+                        <div style="justify-content:center; display:flex;">
+                            <button class="btn btn-outline-dark" style="width:49%;" onclick="prevLine()">↑</button>
+                            <button class="btn btn-outline-dark" style="width:49%;" onclick="nextLine()">↓</button>
                         </div>
                             <textarea id="codeArea">public static void main(String[] args) {}</textarea>
 
