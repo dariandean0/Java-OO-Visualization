@@ -1,5 +1,6 @@
-use crate::analyzer::{
-    AnalysisResult, JavaClass, JavaField, JavaMethod, Relationship, RelationshipType,
+use crate::{
+    analyzer::AnalysisResult,
+    repr::{JavaClass, JavaField, JavaMethod, Relationship, RelationshipType},
 };
 
 pub struct GraphGenerator {
@@ -73,7 +74,7 @@ impl GraphGenerator {
         let mut body = String::new();
 
         for class in &analysis.classes {
-            body.push_str(&self.generate_class_subgraph(class, analysis));
+            body.push_str(&self.generate_class_node(class));
             body.push('\n');
         }
 
@@ -84,91 +85,153 @@ impl GraphGenerator {
         body
     }
 
-    pub(crate) fn generate_class_subgraph(
+    /// Generate a memory-diagram-style node for a class.
+    ///
+    /// Per the Memory Diagram Guide:
+    ///   - Objects (class instances) are represented as circles.
+    ///   - Interfaces / static-only classes are represented as diamonds.
+    ///   - Private members go inside the shape; public members go on the border.
+    ///   - Fields are small rectangles; methods are short lines.
+    ///
+    /// In DOT we approximate this with HTML labels:
+    ///   - Classes use `shape=circle` (ellipse for readability).
+    ///   - Interfaces use `shape=diamond`.
+    ///   - The HTML label arranges members with visual separation
+    ///     between "interior" (private) and "border" (public) sections.
+    pub(crate) fn generate_class_node(&self, class: &JavaClass) -> String {
+        let mut out = String::new();
+        let safe = class.name.replace('.', "_");
+
+        let fields: Vec<&JavaField> = if self.config.show_fields {
+            class
+                .fields
+                .iter()
+                .filter(|f| self.config.show_private_members || f.visibility != "private")
+                .collect()
+        } else {
+            vec![]
+        };
+
+        let methods: Vec<&JavaMethod> = if self.config.show_methods {
+            class
+                .methods
+                .iter()
+                .filter(|m| self.config.show_private_members || m.visibility != "private")
+                .collect()
+        } else {
+            vec![]
+        };
+
+        let private_fields: Vec<&&JavaField> = fields
+            .iter()
+            .filter(|f| f.visibility == "private")
+            .collect();
+        let public_fields: Vec<&&JavaField> = fields
+            .iter()
+            .filter(|f| f.visibility != "private")
+            .collect();
+        let private_methods: Vec<&&JavaMethod> = methods
+            .iter()
+            .filter(|m| m.visibility == "private")
+            .collect();
+        let public_methods: Vec<&&JavaMethod> = methods
+            .iter()
+            .filter(|m| m.visibility != "private")
+            .collect();
+
+        let shape = if class.is_interface {
+            "diamond"
+        } else {
+            "circle"
+        };
+
+        let label = self.build_html_label(
+            class,
+            &private_fields,
+            &public_fields,
+            &private_methods,
+            &public_methods,
+        );
+
+        let peripheries = if class.fields.iter().all(|f| f.is_final) && !class.fields.is_empty() {
+            ", peripheries=2"
+        } else {
+            ""
+        };
+
+        out.push_str(&format!(
+            "    \"{safe}_class\" [shape={shape}, label=<{label}>, style=filled, fillcolor=white{peripheries}];\n",
+        ));
+
+        out
+    }
+
+    /// Build an HTML label that mirrors the memory diagram layout.
+    ///
+    /// Layout (top-to-bottom inside the shape):
+    ///   1. Class name (bold, top)
+    ///   2. Public methods  — on the "border" (separated by a line)
+    ///   3. Public fields   — on the "border" (separated by a line)
+    ///   4. Private fields  — in the "interior"
+    ///   5. Private methods — in the "interior"
+    fn build_html_label(
         &self,
         class: &JavaClass,
-        _analysis: &AnalysisResult,
+        private_fields: &[&&JavaField],
+        public_fields: &[&&JavaField],
+        private_methods: &[&&JavaMethod],
+        public_methods: &[&&JavaMethod],
     ) -> String {
-        let mut subgraph = String::new();
-        let safe_class_name = class.name.replace('.', "_");
+        let mut html = String::new();
 
-        // Start subgraph
-        subgraph.push_str(&format!("    subgraph cluster_{} {{\n", safe_class_name));
-        subgraph.push_str(&format!(
-            "        label=\"{}\";\n",
-            self.get_class_label(class)
-        ));
-        subgraph.push_str("        style=filled;\n");
-        subgraph.push_str("        color=lightgrey;\n");
-        subgraph.push_str("        node [shape=box, style=filled, fillcolor=white];\n\n");
+        html.push_str("<TABLE BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"2\" CELLPADDING=\"4\">");
 
-        // Add class header node
-        subgraph.push_str(&format!(
-            "        \"{}_class\" [label=\"{}\", shape=ellipse, style=filled, fillcolor=lightblue];\n",
-            safe_class_name, self.get_class_label(class)
+        let class_label = self.get_class_label(class);
+        html.push_str(&format!(
+            "<TR><TD><B><FONT POINT-SIZE=\"14\">{}</FONT></B></TD></TR>",
+            Self::escape_html(&class_label)
         ));
 
-        // Add field nodes
-        if self.config.show_fields && !class.fields.is_empty() {
-            if self.config.cluster_fields {
-                subgraph.push_str(&format!(
-                    "        subgraph cluster_{}_fields {{\n",
-                    safe_class_name
-                ));
-                subgraph.push_str("            label=\"Fields\";\n");
-                subgraph.push_str("            style=dashed;\n");
-            }
-
-            for field in &class.fields {
-                if !self.config.show_private_members && field.visibility == "private" {
-                    continue;
-                }
-                subgraph.push_str(&self.generate_field_node(field, &safe_class_name));
-            }
-
-            if self.config.cluster_fields {
-                subgraph.push_str("        }\n");
-            }
+        for method in public_methods {
+            let label = self.format_method(method);
+            html.push_str(&format!(
+                "<TR><TD><U>{}</U></TD></TR>",
+                Self::escape_html(&label)
+            ));
         }
 
-        // Add method nodes
-        if self.config.show_methods && !class.methods.is_empty() {
-            if self.config.cluster_methods {
-                subgraph.push_str(&format!(
-                    "        subgraph cluster_{}_methods {{\n",
-                    safe_class_name
-                ));
-                subgraph.push_str("            label=\"Methods\";\n");
-                subgraph.push_str("            style=dashed;\n");
-            }
-
-            for method in &class.methods {
-                if !self.config.show_private_members && method.visibility == "private" {
-                    continue;
-                }
-                subgraph.push_str(&self.generate_method_node(method, &safe_class_name));
-            }
-
-            if self.config.cluster_methods {
-                subgraph.push_str("        }\n");
-            }
+        for field in public_fields {
+            let label = self.format_field_for_diagram(field);
+            html.push_str(&format!(
+                "<TR><TD BORDER=\"1\" BGCOLOR=\"lightyellow\">{}</TD></TR>",
+                Self::escape_html(&label)
+            ));
         }
 
-        // Add constructor nodes (commented out - not needed for visualization)
-        // if self.config.show_constructors && !class.constructors.is_empty() {
-        //     for constructor in &class.constructors {
-        //         if !self.config.show_private_members && constructor.visibility == "private" {
-        //             continue;
-        //         }
-        //         subgraph.push_str(&self.generate_constructor_node(constructor, &safe_class_name));
-        //     }
-        // }
+        let has_public = !public_methods.is_empty() || !public_fields.is_empty();
+        let has_private = !private_methods.is_empty() || !private_fields.is_empty();
+        if has_public && has_private {
+            html.push_str("<HR/>");
+        }
 
-        // Add internal connections (methods accessing fields)
-        subgraph.push_str(&self.generate_internal_connections(class, &safe_class_name));
+        for field in private_fields {
+            let label = self.format_field_for_diagram(field);
+            html.push_str(&format!(
+                "<TR><TD BORDER=\"1\" BGCOLOR=\"lightyellow\">{}</TD></TR>",
+                Self::escape_html(&label)
+            ));
+        }
 
-        subgraph.push_str("    }\n");
-        subgraph
+        for method in private_methods {
+            let label = self.format_method(method);
+            html.push_str(&format!(
+                "<TR><TD><U>{}</U></TD></TR>",
+                Self::escape_html(&label)
+            ));
+        }
+
+        html.push_str("</TABLE>");
+        html
     }
 
     pub(crate) fn get_class_label(&self, class: &JavaClass) -> String {
@@ -181,73 +244,11 @@ impl GraphGenerator {
         }
     }
 
-    pub(crate) fn generate_field_node(&self, field: &JavaField, class_name: &str) -> String {
-        let field_id = format!("{}_{}", class_name, field.name);
-        let label = self.format_field(field);
-
-        format!(
-            "        \"{}\" [label=\"{}\", shape=note, style=filled, fillcolor=lightyellow];\n",
-            field_id, label
-        )
-    }
-
-    pub(crate) fn generate_method_node(&self, method: &JavaMethod, class_name: &str) -> String {
-        let method_id = format!("{}_{}", class_name, method.name);
-        let label = self.format_method(method);
-
-        let color = match method.visibility.as_str() {
-            "public" => "lightgreen",
-            "private" => "lightcoral",
-            "protected" => "lightorange",
-            _ => "lightgray",
-        };
-
-        format!(
-            "        \"{}\" [label=\"{}\", shape=component, style=filled, fillcolor={}];\n",
-            method_id, label, color
-        )
-    }
-
-    pub(crate) fn generate_internal_connections(
-        &self,
-        class: &JavaClass,
-        class_name: &str,
-    ) -> String {
-        let mut connections = String::new();
-
-        // Connect class to its fields and methods
-        for field in &class.fields {
-            if !self.config.show_private_members && field.visibility == "private" {
-                continue;
-            }
-            let field_id = format!("{}_{}", class_name, field.name);
-            connections.push_str(&format!(
-                "        \"{}_class\" -> \"{}\" [style=dashed, arrowhead=none];\n",
-                class_name, field_id
-            ));
-        }
-
-        for method in &class.methods {
-            if !self.config.show_private_members && method.visibility == "private" {
-                continue;
-            }
-            let method_id = format!("{}_{}", class_name, method.name);
-            connections.push_str(&format!(
-                "        \"{}_class\" -> \"{}\" [style=dashed, arrowhead=none];\n",
-                class_name, method_id
-            ));
-        }
-
-        // Constructors removed - not needed for visualization
-
-        connections
-    }
-
     pub(crate) fn generate_inter_class_relationships(&self, analysis: &AnalysisResult) -> String {
         let mut relationships = String::new();
 
         for relationship in &analysis.relationships {
-            match relationship.relationship_type {
+            match relationship.kind {
                 RelationshipType::Extends => {
                     relationships.push_str(&format!(
                         "    \"{}_class\" -> \"{}_class\" [arrowhead=empty, style=solid, label=extends];\n",
@@ -262,17 +263,11 @@ impl GraphGenerator {
                         relationship.to.replace('.', "_")
                     ));
                 }
-                RelationshipType::Calls => {
-                    if self.config.show_method_calls {
-                        relationships
-                            .push_str(&self.generate_method_call_relationship(relationship));
-                    }
+                RelationshipType::Calls if self.config.show_method_calls => {
+                    relationships.push_str(&self.generate_method_call_relationship(relationship));
                 }
-                RelationshipType::MethodCall => {
-                    if self.config.show_method_calls {
-                        relationships
-                            .push_str(&self.generate_method_call_relationship(relationship));
-                    }
+                RelationshipType::MethodCall if self.config.show_method_calls => {
+                    relationships.push_str(&self.generate_method_call_relationship(relationship));
                 }
                 _ => {}
             }
@@ -282,23 +277,36 @@ impl GraphGenerator {
     }
 
     fn generate_method_call_relationship(&self, relationship: &Relationship) -> String {
-        // For method calls, connect specific method nodes directly
-        let from_clean = relationship.from.replace('.', "_");
-        let to_clean = relationship.to.replace('.', "_");
+        let (from_class, from_method) = relationship
+            .from
+            .split_once('.')
+            .unwrap_or((&relationship.from, ""));
+        let (to_class, to_method) = relationship
+            .to
+            .split_once('.')
+            .unwrap_or((&relationship.to, ""));
 
-        // Create direct method-to-method connections
+        let from_node = format!("{}_class", from_class);
+        let to_node = format!("{}_class", to_class);
+
+        let label = if !from_method.is_empty() && !to_method.is_empty() {
+            format!("{} -> {}", from_method, to_method)
+        } else if !to_method.is_empty() {
+            to_method.to_string()
+        } else {
+            String::new()
+        };
+
         format!(
-            "    \"{}\" -> \"{}\" [arrowhead=normal, style=solid, color=blue];\n",
-            from_clean, to_clean
+            "    \"{}\" -> \"{}\" [arrowhead=normal, style=solid, color=blue, label=\"{}\"];\n",
+            from_node, to_node, label
         )
     }
 
-    pub(crate) fn format_field(&self, field: &JavaField) -> String {
-        let vis_prefix = if field.visibility == "package" || field.visibility.is_empty() {
-            String::new()
-        } else {
-            format!("{} ", field.visibility)
-        };
+    /// Format a field label for the memory diagram.
+    /// Shows: type name  (e.g. "int age" or "String name")
+    /// Omits visibility prefix since position (inside vs border) conveys that.
+    fn format_field_for_diagram(&self, field: &JavaField) -> String {
         let static_modifier = if field.is_static { "static " } else { "" };
         let final_modifier = if field.is_final { "final " } else { "" };
 
@@ -309,8 +317,8 @@ impl GraphGenerator {
         };
 
         format!(
-            "{}{}{}{}{}",
-            vis_prefix, static_modifier, final_modifier, type_str, field.name
+            "{}{}{}{}",
+            static_modifier, final_modifier, type_str, field.name
         )
     }
 
@@ -346,31 +354,9 @@ impl GraphGenerator {
         )
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn format_constructor(&self, constructor: &JavaMethod) -> String {
-        let visibility = if constructor.visibility == "package" {
-            ""
-        } else {
-            &constructor.visibility
-        };
-
-        let params = if self.config.show_method_parameters {
-            let param_strs: Vec<String> = constructor
-                .parameters
-                .iter()
-                .map(|p| {
-                    if self.config.show_field_types {
-                        format!("{} {}", p.param_type, p.name)
-                    } else {
-                        p.name.clone()
-                    }
-                })
-                .collect();
-            format!("({})", param_strs.join(", "))
-        } else {
-            "()".to_string()
-        };
-
-        format!("{}{}", visibility, params)
+    fn escape_html(text: &str) -> String {
+        text.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
     }
 }

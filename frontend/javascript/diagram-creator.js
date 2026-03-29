@@ -1268,16 +1268,48 @@ window.getCurrentDiagram = function () {
   const classNodes = shapes.filter(s => s.type === 'class' || s.type === 'interface');
   const connectors = shapes.filter(s => isConnectorShape(s.type));
 
-  const classes = classNodes.map(n => ({ name: n.text || `node${n.id}` }));
+    const classes = classNodes.map(cls => {
+    const containedMethods = shapes
+      .filter(s => s.type.startsWith('method-') && _containedIn(s, cls));
+
+    const linkedMethods = shapes
+      .filter(s => isConnectorShape(s.type)
+               && s.startNode === cls
+               && s.endNode
+               && s.endNode.type.startsWith('method-'))
+      .map(s => s.endNode);
+
+    const allMethodShapes = [...new Map(
+      [...containedMethods, ...linkedMethods].map(m => [m.id, m])
+    ).values()];
+
+    const methods = allMethodShapes.map(m => ({
+      name: m.text || '',
+    }));
+
+    const fields = shapes
+      .filter(s => s.type === 'field' && _containedIn(s, cls))
+      .map(f => ({
+        name: f.text || '',
+      }));
+
+    return {
+      name: cls.text || `node${cls.id}`,
+      methods,
+      fields,
+    };
+  });
 
   const relationships = connectors
     .filter(c => c.startNode && c.endNode)
+    .filter(c => !c.endNode.type.startsWith('method-') && c.endNode.type !== 'field')
     .map(c => ({
       from: c.startNode.text || `node${c.startNode.id}`,
       to:   c.endNode.text   || `node${c.endNode.id}`,
       kind: c.type === 'extends'    ? 'Extends'
           : c.type === 'implements' ? 'Implements'
-          : 'Association'
+          : c.type === 'calls'      ? 'Calls'
+          : 'Uses'
     }));
 
   return { classes, relationships };

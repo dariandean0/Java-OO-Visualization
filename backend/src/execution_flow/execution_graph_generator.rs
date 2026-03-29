@@ -1,7 +1,8 @@
-use super::ExecutionFlow;
-use super::execution_analyzer::{ExecutionAction, ExecutionStep};
-use crate::analyzer::{AnalysisResult, RelationshipType};
-use crate::no_flow;
+use super::{
+    ExecutionFlow,
+    execution_analyzer::{ExecutionAction, ExecutionStep},
+};
+use crate::{analyzer::AnalysisResult, no_flow, repr::RelationshipType};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -119,7 +120,7 @@ impl VisibilityState {
             });
         }
 
-        result.relationships.retain(|r| match r.relationship_type {
+        result.relationships.retain(|r| match r.kind {
             RelationshipType::MethodCall | RelationshipType::Calls => {
                 let from_visible = if let Some((cls, meth)) = r.from.split_once('.') {
                     self.visible_classes.contains(cls)
@@ -264,11 +265,12 @@ impl ExecutionGraphGenerator {
     }
 
     fn apply_highlights(&self, dot_content: &str, current_step: &ExecutionStep) -> String {
-        let mut highlight_ids: HashSet<String> = HashSet::new();
+        let mut highlight_classes: HashSet<String> = HashSet::new();
+        let mut highlight_fields: HashSet<String> = HashSet::new();
 
         for entry in &current_step.call_stack {
-            if let Some((class, method)) = entry.split_once('.') {
-                highlight_ids.insert(format!("{}_{}", class, method));
+            if let Some((class, _method)) = entry.split_once('.') {
+                highlight_classes.insert(class.to_string());
             }
         }
 
@@ -283,28 +285,34 @@ impl ExecutionGraphGenerator {
                 field_name,
                 ..
             } => {
-                highlight_ids.insert(format!("{}_{}", class_name, field_name));
+                highlight_classes.insert(class_name.clone());
+                highlight_fields.insert(field_name.clone());
             }
             _ => {}
         }
 
         let mut result = dot_content.to_string();
 
-        for element_id in &highlight_ids {
-            let field_prefix = format!("\"{}", element_id);
+        for class_name in &highlight_classes {
+            let node_prefix = format!("\"{}_class\"", class_name);
             let lines: Vec<&str> = result.lines().collect();
             let mut new_lines = Vec::new();
             for line in lines {
-                if line.contains(&field_prefix) && (line.contains(" [") || line.contains(" = ")) {
-                    let modified = line
-                        .replace("fillcolor=lightyellow", "fillcolor=gold")
-                        .replace("fillcolor=lightgreen", "fillcolor=lime");
+                if line.contains(&node_prefix) && line.contains("shape=") {
+                    let modified = line.replace("fillcolor=white", "fillcolor=lightyellow");
                     new_lines.push(modified);
                 } else {
                     new_lines.push(line.to_string());
                 }
             }
             result = new_lines.join("\n");
+        }
+
+        for field_name in &highlight_fields {
+            result = result.replace(
+                &format!("BGCOLOR=\"lightyellow\">{field_name}"),
+                &format!("BGCOLOR=\"gold\">{field_name}"),
+            );
         }
 
         result
@@ -351,11 +359,13 @@ impl ExecutionGraphGenerator {
         subgraph
     }
 
+    /// Render active objects using memory diagram notation:
+    /// - Variable = rectangle with "Type varName" label above, reference arrow inside
+    /// - Object = circle with class name
     fn generate_object_state_subgraph(&self, steps: &[ExecutionStep]) -> String {
         let mut subgraph = String::new();
         let mut active_objects = HashMap::new();
 
-        // Collect all objects that have been created
         for step in steps {
             if let ExecutionAction::ObjectCreation {
                 variable_name,
@@ -371,15 +381,29 @@ impl ExecutionGraphGenerator {
             subgraph.push_str("    subgraph cluster_objects {\n");
             subgraph.push_str("        label=\"Active Objects\";\n");
             subgraph.push_str("        style=filled;\n");
-            subgraph.push_str("        fillcolor=lightgreen;\n");
+            subgraph.push_str("        fillcolor=\"#f0f0f0\";\n");
 
             for (var_name, class_name) in &active_objects {
-                let node_id = format!("obj_{}", self.sanitize_name(var_name));
+                let var_id = format!("var_{}", self.sanitize_name(var_name));
+                let obj_id = format!("obj_{}", self.sanitize_name(var_name));
+
                 subgraph.push_str(&format!(
-                    "        {} [label=\"{}\\n({})\", shape=ellipse, style=\"filled\", fillcolor=white];\n",
-                    node_id,
-                    self.escape_label(var_name),
-                    self.escape_label(class_name)
+                    "        {var_id} [label=<\
+                    <TABLE BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"0\" CELLPADDING=\"2\">\
+                    <TR><TD><FONT POINT-SIZE=\"10\">{class_name} {var_name}</FONT></TD></TR>\
+                    <TR><TD BORDER=\"1\" WIDTH=\"60\" HEIGHT=\"20\"> </TD></TR>\
+                    </TABLE>>, shape=none];\n",
+                    var_name = self.escape_html(var_name),
+                    class_name = self.escape_html(class_name),
+                ));
+
+                subgraph.push_str(&format!(
+                    "        {obj_id} [label=\"{class_name}\", shape=circle, style=filled, fillcolor=white];\n",
+                    class_name = self.escape_label(class_name),
+                ));
+
+                subgraph.push_str(&format!(
+                    "        {var_id} -> {obj_id} [arrowhead=normal];\n",
                 ));
             }
 
@@ -427,15 +451,20 @@ impl ExecutionGraphGenerator {
             .replace('}', "\\}")
             .replace('|', "\\|")
     }
+
+    fn escape_html(&self, text: &str) -> String {
+        text.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+    }
 }
 
 #[cfg(test)]
 mod generator_tests {
     use super::super::execution_analyzer::{ExecutionAction, ExecutionStep};
     use super::*;
-    use crate::analyzer::{
-        AnalysisResult, JavaClass, JavaField, JavaMethod, Relationship, RelationshipType,
-    };
+    use crate::analyzer::AnalysisResult;
+    use crate::repr::{JavaClass, JavaField, JavaMethod, Relationship, RelationshipType};
 
     #[test]
     fn execution_graph_generation() {
@@ -550,7 +579,7 @@ mod generator_tests {
             relationships: vec![Relationship {
                 from: "Calculator".to_string(),
                 to: "Printer".to_string(),
-                relationship_type: RelationshipType::Uses,
+                kind: RelationshipType::Uses,
             }],
             object_registry: HashMap::new(),
             type_inference: HashMap::new(),

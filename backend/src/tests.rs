@@ -1,9 +1,12 @@
-use crate::analyzer::{AnalysisResult, JavaAnalyzer, RelationshipType};
-use crate::no_flow::GraphConfig;
-use crate::no_flow::GraphGenerator;
-use crate::parser::JavaParser;
-use crate::visualizer::{JavaVisualizer, visualize_java_code, visualize_java_code_with_config};
-use crate::{execution_flow_gen, no_flow_gen};
+use crate::{
+    analyzer::{AnalysisResult, JavaAnalyzer},
+    execution_flow_gen,
+    no_flow::{GraphConfig, GraphGenerator},
+    no_flow_gen,
+    parser::JavaParser,
+    repr::RelationshipType,
+    visualizer::{JavaVisualizer, visualize_java_code},
+};
 
 /// Test helper to parse and analyze Java code
 fn analyze_java_code(code: &str) -> AnalysisResult {
@@ -129,7 +132,7 @@ public class Cat extends Animal {}
         let extends_relationships: Vec<_> = result
             .relationships
             .iter()
-            .filter(|r| matches!(r.relationship_type, RelationshipType::Extends))
+            .filter(|r| matches!(r.kind, RelationshipType::Extends))
             .collect();
 
         assert_eq!(extends_relationships.len(), 2);
@@ -178,7 +181,7 @@ public class Circle implements Drawable {
         let implements_relationships: Vec<_> = result
             .relationships
             .iter()
-            .filter(|r| matches!(r.relationship_type, RelationshipType::Implements))
+            .filter(|r| matches!(r.kind, RelationshipType::Implements))
             .collect();
 
         assert_eq!(implements_relationships.len(), 1);
@@ -233,7 +236,7 @@ class Calculator {
         let method_calls: Vec<_> = result
             .relationships
             .iter()
-            .filter(|r| matches!(r.relationship_type, RelationshipType::MethodCall))
+            .filter(|r| matches!(r.kind, RelationshipType::MethodCall))
             .collect();
 
         assert_eq!(method_calls.len(), 3);
@@ -270,7 +273,7 @@ public class StaticCalls {
         let method_calls: Vec<_> = result
             .relationships
             .iter()
-            .filter(|r| matches!(r.relationship_type, RelationshipType::MethodCall))
+            .filter(|r| matches!(r.kind, RelationshipType::MethodCall))
             .collect();
 
         // Should detect static method calls
@@ -306,32 +309,15 @@ public class TestClass {
         let result = analyze_java_code(code);
         let dot = generate_dot(&result);
 
-        // Verify DOT structure
         assert!(dot.starts_with("digraph JavaClasses {"));
         assert!(dot.ends_with("}\n"));
 
-        // Verify subgraph structure
-        assert!(dot.contains("subgraph cluster_TestClass"));
-        assert!(dot.contains("label=\"TestClass\""));
-
-        // Verify class node
         assert!(dot.contains("TestClass_class"));
-        assert!(dot.contains("shape=ellipse"));
-        assert!(dot.contains("fillcolor=lightblue"));
+        assert!(dot.contains("shape=circle"));
+        assert!(dot.contains("fillcolor=white"));
 
-        // Verify field node
-        assert!(dot.contains("TestClass_name"));
-        assert!(dot.contains("shape=note"));
-        assert!(dot.contains("fillcolor=lightyellow"));
-
-        // Verify method node
-        assert!(dot.contains("TestClass_getName"));
-        assert!(dot.contains("shape=component"));
-        assert!(dot.contains("fillcolor=lightgreen"));
-
-        // Verify internal connections
-        assert!(dot.contains("TestClass_class\" -> \"TestClass_name\""));
-        assert!(dot.contains("TestClass_class\" -> \"TestClass_getName\""));
+        assert!(dot.contains("getName"));
+        assert!(dot.contains("name"));
     }
 
     #[test]
@@ -369,11 +355,11 @@ class Helper {
         let result = analyze_java_code(code);
         let dot = generate_dot(&result);
 
-        // Verify method call arrow
-        assert!(dot.contains("Caller_call\" -> \"Helper_method\""));
+        assert!(dot.contains("Caller_class\" -> \"Helper_class\""));
         assert!(dot.contains("arrowhead=normal"));
         assert!(dot.contains("color=blue"));
         assert!(dot.contains("style=solid"));
+        assert!(dot.contains("call -> method"));
     }
 
     #[test]
@@ -470,39 +456,19 @@ public class TestClass {
 
         let result = visualize_java_code(code).unwrap();
 
-        // Parse DOT output and verify exact structure
         let lines: Vec<&str> = result.lines().collect();
         assert_eq!(lines[0], "digraph JavaClasses {");
         assert_eq!(lines.last().unwrap().trim(), "}");
 
-        // Verify specific nodes exist with exact formatting
         assert!(
             result
                 .lines()
-                .any(|line| line.contains("TestClass_class") && line.contains("shape=ellipse"))
-        );
-        assert!(
-            result
-                .lines()
-                .any(|line| line.contains("TestClass_value") && line.contains("shape=note"))
-        );
-        assert!(
-            result
-                .lines()
-                .any(|line| line.contains("TestClass_method") && line.contains("shape=component"))
+                .any(|line| line.contains("TestClass_class") && line.contains("shape=circle"))
         );
 
-        // Verify subgraph structure
-        assert!(
-            result
-                .lines()
-                .any(|line| line.contains("subgraph cluster_TestClass"))
-        );
-        assert!(
-            result
-                .lines()
-                .any(|line| line.contains("label=\"TestClass\""))
-        );
+        assert!(result.contains("TestClass"));
+        assert!(result.contains("value"));
+        assert!(result.contains("method"));
     }
 
     #[test]
@@ -524,13 +490,11 @@ public class TestClass {
 
         let dot = visualizer.generate_dot_from_analysis(&analysis);
 
-        // Verify DOT structure
         assert!(dot.starts_with("digraph JavaClasses {"));
         assert!(dot.ends_with("}\n"));
 
-        // Verify class node
         assert!(dot.contains("Test_class"));
-        assert!(dot.contains("shape=ellipse"));
+        assert!(dot.contains("shape=circle"));
     }
 
     #[test]
@@ -599,28 +563,16 @@ public class ContentTest {
 
         let result = no_flow_gen(code);
 
-        // Verify exact DOT structure and content
         assert!(result.starts_with("digraph JavaClasses {"));
         assert!(result.ends_with("}\n"));
 
-        // Verify class node exists with exact attributes
         assert!(result.lines().any(|line| line.contains("ContentTest_class")
-            && line.contains("shape=ellipse")
-            && line.contains("fillcolor=lightblue")));
+            && line.contains("shape=circle")
+            && line.contains("fillcolor=white")));
 
-        // Verify field nodes exist with exact formatting
-        assert!(result.lines().any(|line| line.contains("ContentTest_value")
-            && line.contains("shape=note")
-            && line.contains("fillcolor=lightyellow")));
-
-        // Verify method node exists
-        assert!(
-            result
-                .lines()
-                .any(|line| line.contains("ContentTest_method")
-                    && line.contains("shape=component")
-                    && line.contains("fillcolor=lightgreen"))
-        );
+        assert!(result.contains("value"));
+        assert!(result.contains("name"));
+        assert!(result.contains("method"));
     }
 
     #[test]
@@ -683,13 +635,13 @@ public class Calculator {
         }
 
         assert!(
-            result[0].contains("cluster_Calculator") || result[0].contains("Calculator"),
+            result[0].contains("Calculator"),
             "First step should show Calculator class after ObjectCreation"
         );
 
         let last = result.last().unwrap();
         assert!(
-            last.contains("cluster_Calculator"),
+            last.contains("Calculator_class"),
             "Last step should contain Calculator class diagram"
         );
 
@@ -734,10 +686,10 @@ public class Calculator {
             "Some step should show the value field with runtime value 0.0"
         );
 
-        let has_method_highlight = result.iter().any(|g| g.contains("fillcolor=lime"));
+        let has_highlight = result.iter().any(|g| g.contains("fillcolor=lightyellow"));
         assert!(
-            has_method_highlight,
-            "Some step should have a highlighted method (fillcolor=lime)"
+            has_highlight,
+            "Some step should have a highlighted class node (fillcolor=lightyellow)"
         );
     }
 

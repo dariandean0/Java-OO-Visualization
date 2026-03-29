@@ -1,5 +1,4 @@
-use crate::analyzer::AnalysisResult;
-use crate::parser::node_text;
+use crate::{analyzer::AnalysisResult, parser::node_text};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tree_sitter::Node;
@@ -340,14 +339,15 @@ impl ExecutionAnalyzer {
                                     .classes
                                     .iter()
                                     .find(|c| c.name == creation_class)
-                                    && let Some(ctor) = class.constructors.first() {
-                                        for (i, formal) in ctor.parameters.iter().enumerate() {
-                                            if let Some(arg_val) = params.get(i) {
-                                                self.param_values
-                                                    .insert(formal.name.clone(), arg_val.clone());
-                                            }
+                                    && let Some(ctor) = class.constructors.first()
+                                {
+                                    for (i, formal) in ctor.parameters.iter().enumerate() {
+                                        if let Some(arg_val) = params.get(i) {
+                                            self.param_values
+                                                .insert(formal.name.clone(), arg_val.clone());
                                         }
                                     }
+                                }
 
                                 self.analyze_block(&body_node, source, root_node);
 
@@ -516,14 +516,15 @@ impl ExecutionAnalyzer {
                 .classes
                 .iter()
                 .find(|c| c.name == target_class)
-                && let Some(method) = class.methods.iter().find(|m| m.name == method_name) {
-                    for (i, formal) in method.parameters.iter().enumerate() {
-                        if let Some(arg_val) = parameters.get(i) {
-                            self.param_values
-                                .insert(formal.name.clone(), arg_val.clone());
-                        }
+                && let Some(method) = class.methods.iter().find(|m| m.name == method_name)
+            {
+                for (i, formal) in method.parameters.iter().enumerate() {
+                    if let Some(arg_val) = parameters.get(i) {
+                        self.param_values
+                            .insert(formal.name.clone(), arg_val.clone());
                     }
                 }
+            }
 
             self.analyze_block(&body_node, source, root_node);
 

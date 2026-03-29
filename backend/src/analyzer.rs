@@ -1,88 +1,8 @@
 use crate::parser::{node_text, walk_tree};
+use crate::repr::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tree_sitter::Node;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct JavaClass {
-    pub name: String,
-    pub visibility: String,
-    pub is_abstract: bool,
-    pub is_interface: bool,
-    pub extends: Option<String>,
-    pub implements: Vec<String>,
-    pub fields: Vec<JavaField>,
-    pub methods: Vec<JavaMethod>,
-    pub constructors: Vec<JavaMethod>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct JavaField {
-    pub name: String,
-    pub field_type: String,
-    pub visibility: String,
-    pub is_static: bool,
-    pub is_final: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct JavaMethod {
-    pub name: String,
-    pub return_type: String,
-    pub visibility: String,
-    pub is_static: bool,
-    pub is_abstract: bool,
-    pub parameters: Vec<JavaParameter>,
-    pub calls: Vec<MethodCall>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct JavaParameter {
-    pub name: String,
-    pub param_type: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MethodCall {
-    pub caller_method: String,
-    pub caller_class: String,
-    pub method_name: String,
-    pub target_class: String,
-    pub is_static_call: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ObjectInfo {
-    pub variable_name: String,
-    pub class_name: String,
-    pub declared_at_line: usize,
-    pub is_parameter: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AnalysisResult {
-    pub classes: Vec<JavaClass>,
-    pub relationships: Vec<Relationship>,
-    pub object_registry: HashMap<String, ObjectInfo>,
-    pub type_inference: HashMap<String, String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Relationship {
-    pub from: String,
-    pub to: String,
-    pub relationship_type: RelationshipType,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum RelationshipType {
-    Extends,
-    Implements,
-    Uses,
-    Calls,
-    Contains,
-    MethodCall, // New type for specific method-to-method calls
-}
 
 pub struct JavaAnalyzer {
     current_class: Option<JavaClass>,
@@ -92,6 +12,14 @@ pub struct JavaAnalyzer {
     relationships: Vec<Relationship>,
     object_registry: HashMap<String, ObjectInfo>,
     type_inference: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnalysisResult {
+    pub classes: Vec<JavaClass>,
+    pub relationships: Vec<Relationship>,
+    pub object_registry: HashMap<String, ObjectInfo>,
+    pub type_inference: HashMap<String, String>,
 }
 
 impl Default for JavaAnalyzer {
@@ -209,7 +137,7 @@ impl JavaAnalyzer {
                         self.relationships.push(Relationship {
                             from: class.name.clone(),
                             to: extends_class,
-                            relationship_type: RelationshipType::Extends,
+                            kind: RelationshipType::Extends,
                         });
                     }
                 }
@@ -219,7 +147,7 @@ impl JavaAnalyzer {
                         self.relationships.push(Relationship {
                             from: class.name.clone(),
                             to: interface.clone(),
-                            relationship_type: RelationshipType::Implements,
+                            kind: RelationshipType::Implements,
                         });
                     }
                     class.implements = interfaces;
@@ -700,7 +628,7 @@ impl JavaAnalyzer {
                 self.relationships.push(Relationship {
                     from: from_method,
                     to: to_method,
-                    relationship_type: RelationshipType::MethodCall,
+                    kind: RelationshipType::MethodCall,
                 });
             }
         }

@@ -1,5 +1,6 @@
 import Module from '../../wasm/backend.js';
 import * as Viz from 'https://cdn.jsdelivr.net/npm/@viz-js/viz@3.20.0/+esm'
+import panzoom from 'https://cdn.jsdelivr.net/npm/panzoom@9.4.3/+esm'
 
 (async () => {
     const mod = await Module();
@@ -37,18 +38,21 @@ import * as Viz from 'https://cdn.jsdelivr.net/npm/@viz-js/viz@3.20.0/+esm'
     async function update() {
         var dotCode = wasmVisualizeJavaCode(getEditorContent())
         //var dotCode = wasmExecFlowGen(getEditorContent());
-        console.log(dotCode);
+        //console.log(dotCode);
 
         Viz.instance().then(viz => {
             const svg = viz.renderSVGElement(dotCode);
 
-            svg.removeAttribute("width");
-            svg.removeAttribute("height");
-            svg.style.width = "100%";
-            svg.style.height = "auto";
+            document.getElementById('GraphViewport').innerHTML = "";
+            document.getElementById('GraphViewport').appendChild(svg);
 
-            document.getElementById('Graph').innerHTML = "<div class='p-2 fw-bold' style='background-color: #DDDDDD;'>Memory Diagram</div>"; //What?
-            document.getElementById('Graph').appendChild(svg);
+            panzoom(svg, {
+                maxZoom: 5,
+                minZoom: 0.5,
+                bounds: true,
+                boundPadding: 0.05
+            });
+
         });
         resetCurrentLine();
     }
@@ -56,6 +60,7 @@ import * as Viz from 'https://cdn.jsdelivr.net/npm/@viz-js/viz@3.20.0/+esm'
     const debouncedUpdate = debounce(update, 500);
 
     EDITOR.on("change", debouncedUpdate);
+    update();
 })();
 
 // update from URL input
