@@ -108,9 +108,7 @@ pub unsafe extern "C" fn wasm_no_flow_gen(ptr: *const c_char) -> *mut c_char {
     let c_str = unsafe { std::ffi::CStr::from_ptr(ptr) };
     let java_code = c_str.to_str().unwrap_or("");
 
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        no_flow_gen(java_code)
-    }));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| no_flow_gen(java_code)));
 
     let output = match result {
         Ok(s) => s,

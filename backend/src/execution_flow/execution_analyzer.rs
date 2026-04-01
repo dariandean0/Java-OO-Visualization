@@ -94,6 +94,7 @@ pub struct ExecutionAnalyzer {
     field_values: HashMap<(String, String), String>,
     current_class: Option<String>,
     param_values: HashMap<String, String>,
+    local_variables: HashMap<String, String>,
 }
 
 impl ExecutionAnalyzer {
@@ -114,6 +115,7 @@ impl ExecutionAnalyzer {
             field_values: HashMap::new(),
             current_class: None,
             param_values: HashMap::new(),
+            local_variables: HashMap::new(),
         }
     }
 
@@ -334,6 +336,7 @@ impl ExecutionAnalyzer {
 
                                 // Map formal constructor param names to call-site arg values
                                 let old_params = std::mem::take(&mut self.param_values);
+                                let old_locals = std::mem::take(&mut self.local_variables);
                                 if let Some(class) = self
                                     .analysis_result
                                     .classes
@@ -351,6 +354,7 @@ impl ExecutionAnalyzer {
 
                                 self.analyze_block(&body_node, source, root_node);
 
+                                self.local_variables = old_locals;
                                 self.param_values = old_params;
                                 self.current_class = old_class;
                             }
@@ -381,14 +385,17 @@ impl ExecutionAnalyzer {
                             );
                         } else {
                             value_handled = true;
-                            let value = node_text(&value_node, source).to_string();
+                            let raw = node_text(&value_node, source).to_string();
+                            let resolved = self.resolve_value(&raw);
+                            self.local_variables
+                                .insert(variable_name.clone(), resolved.clone());
                             self.add_execution_step(
                                 line_number,
                                 source_line,
                                 ExecutionAction::VariableAssignment {
                                     variable_name: variable_name.clone(),
                                     value_type: class_name.clone(),
-                                    value,
+                                    value: resolved,
                                 },
                                 format!("Assign value to variable: {}", variable_name),
                             );
@@ -510,7 +517,13 @@ impl ExecutionAnalyzer {
             self.current_class = Some(target_class.clone());
 
             // Map formal parameter names to call-site argument values
+            let resolved_args: Vec<String> = parameters
+                .iter()
+                .map(|arg| self.resolve_value(arg))
+                .collect();
+
             let old_params = std::mem::take(&mut self.param_values);
+            let old_locals = std::mem::take(&mut self.local_variables);
             if let Some(class) = self
                 .analysis_result
                 .classes
@@ -519,7 +532,7 @@ impl ExecutionAnalyzer {
                 && let Some(method) = class.methods.iter().find(|m| m.name == method_name)
             {
                 for (i, formal) in method.parameters.iter().enumerate() {
-                    if let Some(arg_val) = parameters.get(i) {
+                    if let Some(arg_val) = resolved_args.get(i) {
                         self.param_values
                             .insert(formal.name.clone(), arg_val.clone());
                     }
@@ -528,6 +541,7 @@ impl ExecutionAnalyzer {
 
             self.analyze_block(&body_node, source, root_node);
 
+            self.local_variables = old_locals;
             self.param_values = old_params;
             self.current_class = old_class;
         }
@@ -544,7 +558,7 @@ impl ExecutionAnalyzer {
         source: &str,
         line_number: usize,
         source_line: &str,
-        _root_node: &Node,
+        root_node: &Node,
     ) {
         let mut variable_name = String::new();
         let mut value = String::new();
@@ -576,7 +590,7 @@ impl ExecutionAnalyzer {
                 let new_value = if is_compound {
                     self.evaluate_compound_assignment(assign_node, source, &field_name, &value)
                 } else {
-                    value.clone()
+                    self.resolve_value(&value)
                 };
 
                 if let Some(class_name) = self.current_class.clone() {
@@ -605,6 +619,78 @@ impl ExecutionAnalyzer {
         }
 
         if let Some(right) = assign_node.child_by_field_name("right") {
+            if right.kind() == "object_creation_expression" {
+                let params = self.extract_constructor_parameters(&right, source);
+                let creation_class = if let Some(type_node) = right.child_by_field_name("type") {
+                    node_text(&type_node, source).to_string()
+                } else {
+                    "unknown".to_string()
+                };
+
+                self.clear_field_values_for_class(&creation_class);
+
+                self.active_objects
+                    .insert(variable_name.clone(), creation_class.clone());
+                self.record_object_creation(&variable_name);
+
+                let body_range = self.find_method_body(&creation_class, "<init>");
+                let has_body =
+                    body_range.is_some() && self.current_call_depth < self.max_call_depth;
+
+                if has_body {
+                    self.current_call_depth += 1;
+                    self.call_stack.push(format!("{}.<init>", creation_class));
+                }
+
+                self.add_execution_step(
+                    line_number,
+                    source_line,
+                    ExecutionAction::ObjectCreation {
+                        variable_name: variable_name.clone(),
+                        class_name: creation_class.clone(),
+                        constructor_params: params.clone(),
+                    },
+                    format!("Create new {} object: {}", creation_class, variable_name),
+                );
+
+                if let Some((start, end)) = body_range
+                    && has_body
+                    && let Some(body_node) = root_node.descendant_for_byte_range(start, end)
+                {
+                    let old_class = self.current_class.take();
+                    self.current_class = Some(creation_class.clone());
+
+                    let old_params = std::mem::take(&mut self.param_values);
+                    let old_locals = std::mem::take(&mut self.local_variables);
+                    if let Some(class) = self
+                        .analysis_result
+                        .classes
+                        .iter()
+                        .find(|c| c.name == creation_class)
+                        && let Some(ctor) = class.constructors.first()
+                    {
+                        for (i, formal) in ctor.parameters.iter().enumerate() {
+                            if let Some(arg_val) = params.get(i) {
+                                self.param_values
+                                    .insert(formal.name.clone(), arg_val.clone());
+                            }
+                        }
+                    }
+
+                    self.analyze_block(&body_node, source, root_node);
+
+                    self.local_variables = old_locals;
+                    self.param_values = old_params;
+                    self.current_class = old_class;
+                }
+
+                if has_body {
+                    self.call_stack.pop();
+                    self.current_call_depth -= 1;
+                }
+                return;
+            }
+
             value = node_text(&right, source).to_string();
         }
 
@@ -651,6 +737,7 @@ impl ExecutionAnalyzer {
         let right_val: f64 = self
             .param_values
             .get(rhs_text)
+            .or_else(|| self.local_variables.get(rhs_text))
             .and_then(|v| v.parse().ok())
             .or_else(|| rhs_text.parse().ok())
             .unwrap_or(f64::NAN);
@@ -726,7 +813,29 @@ impl ExecutionAnalyzer {
             condition = node_text(&condition_node, source).to_string();
         }
 
-        // For simplicity, simulate one iteration
+        if loop_node.kind() == "for_statement" {
+            if let Some(iterations) = self.evaluate_for_loop_iterations(loop_node, source) {
+                let iterations = iterations.min(100);
+                for i in 0..iterations {
+                    self.add_execution_step(
+                        line_number,
+                        source_line,
+                        ExecutionAction::LoopIteration {
+                            loop_type: loop_type.clone(),
+                            condition: condition.clone(),
+                            iteration: i + 1,
+                        },
+                        format!("Loop iteration {} of {}", i + 1, iterations),
+                    );
+
+                    if let Some(body) = loop_node.child_by_field_name("body") {
+                        self.analyze_statement(&body, source, root_node);
+                    }
+                }
+                return;
+            }
+        }
+
         self.add_execution_step(
             line_number,
             source_line,
@@ -742,6 +851,87 @@ impl ExecutionAnalyzer {
         if let Some(body) = loop_node.child_by_field_name("body") {
             self.analyze_statement(&body, source, root_node);
         }
+    }
+
+    fn evaluate_for_loop_iterations(&self, for_node: &Node, source: &str) -> Option<usize> {
+        let init_node = for_node.child_by_field_name("init")?;
+        let condition_node = for_node.child_by_field_name("condition")?;
+
+        let init_text = node_text(&init_node, source);
+        let cond_text = node_text(&condition_node, source);
+
+        let init_val = self.extract_for_init_value(&init_text)?;
+
+        let (cmp_op, bound_text) = self.extract_for_condition(&cond_text)?;
+        let bound_val = self.resolve_numeric(&bound_text)?;
+
+        let iterations = match cmp_op.as_str() {
+            "<" => {
+                if init_val < bound_val {
+                    (bound_val - init_val) as usize
+                } else {
+                    0
+                }
+            }
+            "<=" => {
+                if init_val <= bound_val {
+                    (bound_val - init_val + 1.0) as usize
+                } else {
+                    0
+                }
+            }
+            ">" => {
+                if init_val > bound_val {
+                    (init_val - bound_val) as usize
+                } else {
+                    0
+                }
+            }
+            ">=" => {
+                if init_val >= bound_val {
+                    (init_val - bound_val + 1.0) as usize
+                } else {
+                    0
+                }
+            }
+            _ => return None,
+        };
+
+        Some(iterations)
+    }
+
+    fn extract_for_init_value(&self, init_text: &str) -> Option<f64> {
+        let parts: Vec<&str> = init_text.split('=').collect();
+        if parts.len() == 2 {
+            let val_str = parts[1].trim().trim_end_matches(';');
+            self.resolve_numeric(val_str)
+        } else {
+            None
+        }
+    }
+
+    fn extract_for_condition(&self, cond_text: &str) -> Option<(String, String)> {
+        for op in &["<=", ">=", "<", ">"] {
+            if let Some(idx) = cond_text.find(op) {
+                let rhs = cond_text[idx + op.len()..].trim().to_string();
+                return Some((op.to_string(), rhs));
+            }
+        }
+        None
+    }
+
+    fn resolve_numeric(&self, text: &str) -> Option<f64> {
+        let trimmed = text.trim();
+        if let Ok(v) = trimmed.parse::<f64>() {
+            return Some(v);
+        }
+        if let Some(v) = self.param_values.get(trimmed) {
+            return v.parse().ok();
+        }
+        if let Some(v) = self.local_variables.get(trimmed) {
+            return v.parse().ok();
+        }
+        None
     }
 
     fn analyze_return_statement(
@@ -851,6 +1041,31 @@ impl ExecutionAnalyzer {
         arguments
     }
 
+    fn clear_field_values_for_class(&mut self, class_name: &str) {
+        self.field_values.retain(|(cls, _), _| cls != class_name);
+    }
+
+    fn resolve_value(&self, text: &str) -> String {
+        if let Some(v) = self.local_variables.get(text) {
+            return v.clone();
+        }
+        if let Some(v) = self.param_values.get(text) {
+            return v.clone();
+        }
+        if text.starts_with("this.") {
+            let field_name = &text[5..];
+            if let Some(class_name) = &self.current_class {
+                if let Some(v) = self
+                    .field_values
+                    .get(&(class_name.clone(), field_name.to_string()))
+                {
+                    return v.clone();
+                }
+            }
+        }
+        text.to_string()
+    }
+
     fn record_object_creation(&mut self, object_name: &str) {
         self.object_lifecycle
             .entry(object_name.to_string())
@@ -873,6 +1088,12 @@ impl ExecutionAnalyzer {
     }
 
     fn resolve_object_class_enhanced(&self, object_name: &str) -> String {
+        if object_name == "this" {
+            if let Some(class_name) = &self.current_class {
+                return class_name.clone();
+            }
+        }
+
         // First check active objects (runtime)
         if let Some(class_name) = self.active_objects.get(object_name) {
             return class_name.clone();
