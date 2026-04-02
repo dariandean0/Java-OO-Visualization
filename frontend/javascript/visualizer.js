@@ -35,11 +35,11 @@ import panzoom from 'https://cdn.jsdelivr.net/npm/panzoom@9.4.3/+esm'
         };
     }
 
+    var execDotArray;
     async function update() {
-        var dotCode = wasmVisualizeJavaCode(getEditorContent())
-        //var dotCode = wasmExecFlowGen(getEditorContent());
-        //console.log(dotCode);
-
+        var dotCode = wasmVisualizeJavaCode(getEditorContent());
+        var execDotCode = wasmExecFlowGen(getEditorContent());
+        execDotArray = JSON.parse(execDotCode);
         Viz.instance().then(viz => {
             const svg = viz.renderSVGElement(dotCode);
 
@@ -61,6 +61,29 @@ import panzoom from 'https://cdn.jsdelivr.net/npm/panzoom@9.4.3/+esm'
 
     EDITOR.on("change", debouncedUpdate);
     update();
+
+    window.changeExecGraph = async function() {
+        if(currentLine <= 0){ 
+            update();
+            return; 
+        }
+        if(currentLine-1 > execDotArray.length){ return; }
+
+        Viz.instance().then(viz => {
+            const svg = viz.renderSVGElement(execDotArray[currentLine-1]);
+
+            document.getElementById('GraphViewport').innerHTML = "";
+            document.getElementById('GraphViewport').appendChild(svg);
+
+            panzoom(svg, {
+                maxZoom: 5,
+                minZoom: 0.5,
+                bounds: true,
+                boundPadding: 0.05
+            });
+
+        });
+    }
 })();
 
 // update from URL input

@@ -40,6 +40,7 @@ function nextLine() {
         EDITOR.removeLineClass(currentLine, "background", "highlight-line");
         currentLine++;
         EDITOR.addLineClass(currentLine, "background", "highlight-line");
+        changeExecGraph();
     }
 }
 function prevLine() {
@@ -47,5 +48,6 @@ function prevLine() {
         EDITOR.removeLineClass(currentLine, "background", "highlight-line");
         currentLine--;
         EDITOR.addLineClass(currentLine, "background", "highlight-line");
+        changeExecGraph();
     }
 }
