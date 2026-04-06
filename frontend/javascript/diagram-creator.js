@@ -607,8 +607,28 @@ function handleMouseDown(e) {
     if (currentTool === 'select') {
       for (let i = shapes.length - 1; i >= 0; i--) {
         if (shapes[i].contains(x, y)) {
+          const clicked = shapes[i];
+
+          if (e.ctrlKey) {
+            // Ctrl+click: migrate single selectedShape into selectedShapes if needed
+            if (selectedShape && !selectedShapes.includes(selectedShape)) {
+              selectedShapes.push(selectedShape);
+              selectedShape = null;
+            }
+            // Toggle clicked shape in the group
+            const idx = selectedShapes.indexOf(clicked);
+            if (idx >= 0) {
+              selectedShapes.splice(idx, 1);
+            } else {
+              selectedShapes.push(clicked);
+            }
+            updatePropertyEditor();
+            redraw();
+            return;
+          }
+
           selectedShapes = [];
-          selectedShape  = shapes[i];
+          selectedShape  = clicked;
           isDragging     = true;
           dragOffsetX    = x - selectedShape.x;
           dragOffsetY    = y - selectedShape.y;
@@ -617,8 +637,8 @@ function handleMouseDown(e) {
           return;
         }
       }
-      // Clicked empty space — clear group, start pan
-      selectedShapes = [];
+      // Clicked empty space — clear group (unless Ctrl held), start pan
+      if (!e.ctrlKey) selectedShapes = [];
       isPanning  = true;
       hasPanned  = false;
       panStartX  = e.clientX;
@@ -795,9 +815,10 @@ function handleMouseUp(e) {
 
   if (isPanning) {
     isPanning = false;
-    if (!hasPanned) {
+    if (!hasPanned && !e.ctrlKey) {
       // Treat as a plain click on empty space → deselect
-      selectedShape = null;
+      selectedShape  = null;
+      selectedShapes = [];
       updatePropertyEditor();
       redraw();
     }
