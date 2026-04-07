@@ -239,8 +239,9 @@
         </div>
         <div id="Comparer" class="page">
             <div id="diagram-comparer-view" class="view">
-  <div style="padding: 8px 12px; font-weight: bold; font-size: 20px;">
-    Diagram Comparer
+  <div style="padding: 8px 12px; display; flex; align-items: center; gap: 16px;">
+    <span style="font-weight: bold; font-size: 20px;">Diagram Comparer</span>
+    <span id="dc-diagram-label" style="font-size: 13px; color: #888; font-style: italic;">Comparing against: current creator diagram</span>
   </div>
 
   <div
@@ -264,7 +265,8 @@
         style="
           flex: 1;
           width: 100%;
-          resize: none;
+          min-height: 500px;
+          resize: vertical;
           font-family: monospace;
           font-size: 14px;
           padding: 8px;
