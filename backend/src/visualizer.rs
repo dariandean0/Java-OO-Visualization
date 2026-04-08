@@ -29,15 +29,7 @@ pub struct JavaVisualizer {
 
 impl JavaVisualizer {
     pub fn new() -> Result<Self> {
-        let parser = JavaParser::new().context("Failed to create JavaParser")?;
-        let analyzer = JavaAnalyzer::new();
-        let graph_generator = GraphGenerator::new();
-
-        Ok(JavaVisualizer {
-            parser,
-            analyzer,
-            graph_generator,
-        })
+        Self::with_config(GraphConfig::default())
     }
 
     pub fn with_config(config: GraphConfig) -> Result<Self> {
