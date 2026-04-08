@@ -4,6 +4,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tree_sitter::Node;
 
+/// Struct which is used, but not consumed, in order to produce
+/// a [`AnalysisResult`]. All the fields are ephemeral and should
+/// be ignored in favor of calling [`JavaAnalyzer::analyze`] and
+/// using the output of that method.
 pub struct JavaAnalyzer {
     current_class: Option<JavaClass>,
     current_class_name: Option<String>,
@@ -29,6 +33,7 @@ impl Default for JavaAnalyzer {
 }
 
 impl JavaAnalyzer {
+    /// Create an instance of [`JavaAnalyzer`]
     pub fn new() -> Self {
         JavaAnalyzer {
             current_class: None,
@@ -41,14 +46,21 @@ impl JavaAnalyzer {
         }
     }
 
+    /// Perform static analysis on code
+    /// Example usage:
+    /// ```rust
+    /// use backend::{parser::JavaParser, analyzer::JavaAnalyzer};
+    /// let java_code = include_str!("../examples/Main.java");
+    /// let mut parser = JavaParser::new().expect("unable to create parser");
+    /// let tree = parser.parse(java_code).expect("unable to create tree");
+    /// 
+    /// let root_node = parser.get_root_node(&tree);
+    /// let mut analyzer = JavaAnalyzer::new();
+    /// let static_analysis = analyzer.analyze(&root_node, java_code);
+    /// ```
     pub fn analyze(&mut self, root_node: &Node, source: &str) -> AnalysisResult {
-        self.classes.clear();
-        self.relationships.clear();
-        self.object_registry.clear();
-        self.type_inference.clear();
-        self.current_class = None;
-        self.current_class_name = None;
-        self.current_method = None;
+        // Clear &self's fields
+        *self = Self::new();
 
         // First pass: collect all classes, fields, methods, and variable declarations
         walk_tree(
