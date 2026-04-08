@@ -12,7 +12,6 @@ use serde::{Deserialize, Serialize};
 pub struct VisualizationResult {
     pub dot_code: String,
     pub analysis: AnalysisResult,
-    pub step_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,11 +69,7 @@ impl JavaVisualizer {
         // Generate the dot code
         let dot_code = self.graph_generator.generate_dot(&analysis);
 
-        Ok(VisualizationResult {
-            dot_code,
-            analysis,
-            step_count: 1,
-        })
+        Ok(VisualizationResult { dot_code, analysis })
     }
 
     pub fn get_analysis_only(&mut self, java_code: &str) -> Result<AnalysisResult> {
