@@ -139,31 +139,11 @@ function analyzeMistakes(correct, student) {
     }
   }
  
-  for (const [name, correctInfo] of correctMap) {
-    const studentInfo = studentMap.get(name);
-    if (!studentInfo) continue;
-    if (correctInfo.isInterface && !studentInfo.isInterface) {
-      mistakes.push({
-        kind:             'WrongNodeType',
-        message:          `'${name}' should be drawn as an Interface, not a Class.`,
-        hint:             `In the code '${name}' is declared with 'interface'. Use the Interface shape (dashed border) instead.`,
-        related_elements: [name],
-      });
-    } else if (!correctInfo.isInterface && studentInfo.isInterface) {
-      mistakes.push({
-        kind:             'WrongNodeType',
-        message:          `'${name}' should be drawn as a Class, not an Interface.`,
-        hint:             `In the code '${name}' is declared with 'class'. Use the Class shape instead.`,
-        related_elements: [name],
-      });
-    }
-  }
  
   for (const correctClass of correct.classes) {
     const studentClass = studentMap.get(correctClass.name);
-    if (!studentClass) continue;
  
-    const studentMethodMap = new Map(studentClass.methods.map(m => [m.name, m]));
+    const studentMethodMap = new Map(studentClass ? studentClass.methods.map(m => [m.name, m]) : []);
     const correctMethodMap = new Map(correctClass.methods.map(m => [m.name, m]));
  
     for (const [mName, mInfo] of correctMethodMap) {
@@ -188,26 +168,13 @@ function analyzeMistakes(correct, student) {
       }
     }
  
-    for (const [mName, correctM] of correctMethodMap) {
-      const studentM = studentMethodMap.get(mName);
-      if (!studentM || !studentM.visibility) continue;
-      if (correctM.visibility !== studentM.visibility) {
-        mistakes.push({
-          kind:             'WrongMethodVisibility',
-          message:          `Method '${mName}' in '${correctClass.name}' has the wrong visibility.`,
-          hint:             `The code declares '${mName}' as '${correctM.visibility}'. Use a ${_visToShapeName(correctM.visibility)} shape instead of ${_visToShapeName(studentM.visibility)}.`,
-          related_elements: [correctClass.name, mName],
-        });
-      }
-    }
   }
  
   // Fields — missing, extra
   for (const correctClass of correct.classes) {
     const studentClass = studentMap.get(correctClass.name);
-    if (!studentClass) continue;
  
-    const studentFieldMap = new Map((studentClass.fields || []).map(f => [f.name, f]));
+    const studentFieldMap = new Map(studentClass ? (studentClass.fields || []).map(f => [f.name, f]) : []);
     const correctFieldMap = new Map(correctClass.fields.map(f => [f.name, f]));
  
     for (const [fName, fInfo] of correctFieldMap) {
@@ -393,10 +360,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const sourceCode = sourceArea.value || "";
       const studentDiagram = buildStudentDiagram();
       const correctDiagram = diagramFromCode(sourceCode);
-      const mistakes = analyzeMistakes(correctDiagram, studentDiagram);
-      console.log("correct:", JSON.stringify(correctDiagram, null, 2));
-      console.log("student:", JSON.stringify(studentDiagram, null, 2));
-      console.log("mistakes:", JSON.stringify(mistakes, null, 2));      
+      const mistakes = analyzeMistakes(correctDiagram, studentDiagram);  
       renderMistakes(mistakes);
     } catch (err) {
       console.error(err);
