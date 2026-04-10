@@ -101,75 +101,25 @@
                             <!-- ── Nodes ── -->
                             <div class="tool-section-label">Nodes</div>
 
-                            <button class="tool-button" data-tool="class" title="Class — drag to size, double-click to name">
-                                <!-- rect with header bar -->
+                            <button class="tool-button" data-tool="class" title="Class — drag to size; add methods &amp; variables in Properties">
                                 <svg width="22" height="16" viewBox="0 0 22 16" fill="none" stroke="currentColor" stroke-width="1.5">
-                                    <rect x="1" y="1" width="20" height="14" rx="1" fill="#f0f0f0"/>
-                                    <rect x="1" y="1" width="20" height="5" rx="1" fill="#add8e6"/>
-                                    <line x1="1" y1="6" x2="21" y2="6"/>
+                                    <ellipse cx="11" cy="8" rx="10" ry="7" fill="white"/>
+                                    <line x1="2" y1="5" x2="20" y2="5" stroke="#aaa" stroke-width="0.8"/>
                                 </svg>
                                 Class
                             </button>
 
-                            <button class="tool-button" data-tool="interface" title="Interface — drag to size, double-click to name">
-                                <svg width="22" height="16" viewBox="0 0 22 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3,2">
-                                    <rect x="1" y="1" width="20" height="14" rx="1" fill="#f5f8ff"/>
-                                    <rect x="1" y="1" width="20" height="5" rx="1" fill="#c4deff"/>
-                                    <line x1="1" y1="6" x2="21" y2="6" stroke-dasharray="none"/>
+                            <button class="tool-button" data-tool="interface" title="Interface — drag to size; add methods &amp; variables in Properties">
+                                <svg width="22" height="16" viewBox="0 0 22 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                                    <polygon points="11,1 21,8 11,15 1,8" fill="white"/>
                                 </svg>
                                 Interface
-                            </button>
-
-                            <button class="tool-button" data-tool="field" title="Field node — draw INSIDE a class box">
-                                <!-- note shape -->
-                                <svg width="22" height="14" viewBox="0 0 22 14" fill="#ffffe0" stroke="currentColor" stroke-width="1.5">
-                                    <path d="M1 1h17l3 3v9H1z"/>
-                                    <path d="M18 1v3h3" fill="none"/>
-                                </svg>
-                                Field
-                            </button>
-
-                            <button class="tool-button" data-tool="class-header" title="Class Header — the ellipse node (ClassName_class) in the DOT">
-                                <!-- ellipse -->
-                                <svg width="22" height="14" viewBox="0 0 22 14" fill="#add8e6" stroke="currentColor" stroke-width="1.5">
-                                    <ellipse cx="11" cy="7" rx="10" ry="6"/>
-                                </svg>
-                                Class Header
-                            </button>
-
-                            <button class="tool-button" data-tool="method-public" title="Public method — draw INSIDE a class box">
-                                <!-- component shape, green -->
-                                <svg width="22" height="14" viewBox="0 0 22 14" fill="#90ee90" stroke="currentColor" stroke-width="1.5">
-                                    <rect x="4" y="1" width="17" height="12" rx="1"/>
-                                    <rect x="1" y="3" width="3" height="3" fill="#90ee90"/>
-                                    <rect x="1" y="8" width="3" height="3" fill="#90ee90"/>
-                                </svg>
-                                Public Method
-                            </button>
-
-                            <button class="tool-button" data-tool="method-private" title="Private method — draw INSIDE a class box">
-                                <svg width="22" height="14" viewBox="0 0 22 14" fill="#f08080" stroke="currentColor" stroke-width="1.5">
-                                    <rect x="4" y="1" width="17" height="12" rx="1"/>
-                                    <rect x="1" y="3" width="3" height="3" fill="#f08080"/>
-                                    <rect x="1" y="8" width="3" height="3" fill="#f08080"/>
-                                </svg>
-                                Private Method
-                            </button>
-
-                            <button class="tool-button" data-tool="method-protected" title="Protected method — draw INSIDE a class box">
-                                <svg width="22" height="14" viewBox="0 0 22 14" fill="#d3d3d3" stroke="currentColor" stroke-width="1.5">
-                                    <rect x="4" y="1" width="17" height="12" rx="1"/>
-                                    <rect x="1" y="3" width="3" height="3" fill="#d3d3d3"/>
-                                    <rect x="1" y="8" width="3" height="3" fill="#d3d3d3"/>
-                                </svg>
-                                Protected Method
                             </button>
 
                             <!-- ── Connections ── -->
                             <div class="tool-section-label">Connections</div>
 
                             <button class="tool-button" data-tool="extends" title="Extends — solid line, hollow arrowhead">
-                                <!-- solid line + hollow triangle -->
                                 <svg width="28" height="12" viewBox="0 0 28 12">
                                     <line x1="0" y1="6" x2="18" y2="6" stroke="currentColor" stroke-width="2"/>
                                     <polygon points="18,2 28,6 18,10" fill="white" stroke="currentColor" stroke-width="1.5"/>
@@ -185,19 +135,12 @@
                                 Implements
                             </button>
 
-                            <button class="tool-button" data-tool="calls" title="Method call — solid blue arrow">
+                            <button class="tool-button" data-tool="calls" title="Arrow — solid blue pointer; set label in Properties">
                                 <svg width="28" height="12" viewBox="0 0 28 12">
                                     <line x1="0" y1="6" x2="18" y2="6" stroke="#0000cd" stroke-width="2"/>
                                     <polygon points="18,2 28,6 18,10" fill="#0000cd" stroke="#0000cd"/>
                                 </svg>
-                                Method Call
-                            </button>
-
-                            <button class="tool-button" data-tool="member-link" title="Member Link — dashed line, no arrowhead (class header → field/method)">
-                                <svg width="28" height="12" viewBox="0 0 28 12">
-                                    <line x1="0" y1="6" x2="28" y2="6" stroke="currentColor" stroke-width="2" stroke-dasharray="5,3"/>
-                                </svg>
-                                Member Link
+                                Arrow
                             </button>
 
                             <!-- ── Actions ── -->

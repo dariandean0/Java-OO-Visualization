@@ -76,8 +76,8 @@ function resetView() {
 }
 
 // Shape role groups
-const NODE_SHAPES      = ['class', 'interface', 'class-header', 'field', 'method-public', 'method-private', 'method-protected'];
-const CONNECTOR_SHAPES = ['extends', 'implements', 'calls', 'member-link'];
+const NODE_SHAPES      = ['class', 'interface'];
+const CONNECTOR_SHAPES = ['extends', 'implements', 'calls'];
 
 function isNodeShape(type)      { return NODE_SHAPES.includes(type); }
 function isConnectorShape(type) { return CONNECTOR_SHAPES.includes(type); }
@@ -97,46 +97,54 @@ class Shape {
     this.strokeColor = '#333333';
     this.lineWidth   = 2;
 
-    // Java OO metadata
-    this.visibility  = 'public';   // 'public' | 'private' | 'protected' | 'package'
-    this.isStatic    = false;
-    this.isFinal     = false;
-    this.isAbstract  = false;
-    this.fieldType   = '';         // e.g. "String"
-    this.returnType  = 'void';     // for methods
-    this.params      = '';         // e.g. "String name, int age"
+    // Class/Interface members (stored directly on the node — no separate shapes needed)
+    // method: { visibility, isStatic, isAbstract, name, params, returnType }
+    this.methods = [];
+    // field:  { visibility, isStatic, isFinal, fieldType, name }
+    this.fields  = [];
+
+    // Abstract flag (class nodes only)
+    this.isAbstract = false;
+
+    // Arrow label (for 'calls' connectors — e.g. "main -> add")
+    this.label = '';
 
     // Connector anchors
     this.startNode  = null;
     this.startPoint = null;   // 'north' | 'south' | 'east' | 'west'
     this.endNode    = null;
     this.endPoint   = null;
+
+    // Curved connector support
+    this.curved      = true;   // curved by default — matches Graphviz edge routing
+    this.curveOffset = 0;      // 0 = auto (20% of connector length); non-zero = manual override
   }
 
-  // ── Label builders ────────────────────────────────────────
-  buildFieldLabel() {
-    const parts = [];
-    if (this.visibility && this.visibility !== 'package') parts.push(this.visibility);
-    if (this.isStatic)  parts.push('static');
-    if (this.isFinal)   parts.push('final');
-    if (this.fieldType) parts.push(this.fieldType);
-    parts.push(this.text || 'field');
-    return parts.join(' ');
+  // ── Border point computation ──────────────────────────────
+  // Returns the world-coordinate point on this node's border at the given angle
+  // from the node center. Works for both ellipse (class) and diamond (interface).
+  _borderPoint(angle) {
+    const cx = this.x + this.width  / 2;
+    const cy = this.y + this.height / 2;
+    const cosA = Math.cos(angle);
+    const sinA = Math.sin(angle);
+    if (this.type === 'class') {
+      const rx = this.width  / 2;
+      const ry = this.height / 2;
+      return { x: cx + rx * cosA, y: cy + ry * sinA };
+    }
+    if (this.type === 'interface') {
+      // Diamond |x/rx| + |y/ry| = 1 — solve for the scale factor t
+      const rx = this.width  / 2;
+      const ry = this.height / 2;
+      const t  = 1 / (Math.abs(cosA) / rx + Math.abs(sinA) / ry);
+      return { x: cx + t * cosA, y: cy + t * sinA };
+    }
+    return { x: cx, y: cy };
   }
 
-  buildMethodLabel() {
-    const mods = [];
-    if (this.visibility && this.visibility !== 'package') mods.push(this.visibility);
-    if (this.isStatic)   mods.push('static');
-    if (this.isAbstract) mods.push('abstract');
-    const prefix = mods.join(' ');
-    const name   = this.text   || 'method';
-    const params = this.params || '';
-    const ret    = this.returnType || 'void';
-    return `${prefix}${prefix ? ' ' : ''}${name}(${params}): ${ret}`;
-  }
-
-  // ── Connection points (N/S/E/W) ───────────────────────────
+  // ── Connection points ─────────────────────────────────────
+  // Legacy: return the four cardinal points for backward-compat with old string-based anchors
   getConnectionPoints() {
     if (!isNodeShape(this.type)) return {};
     const cx = this.x + this.width  / 2;
@@ -149,35 +157,70 @@ class Shape {
     };
   }
 
+  // Accepts either a legacy string name ('north' etc.) or an angle object {kind:'angle', value:θ}
   getConnectionCoordinates(point) {
+    if (point && typeof point === 'object' && point.kind === 'angle') {
+      return this._borderPoint(point.value);
+    }
     const pts = this.getConnectionPoints();
     return pts[point] || { x: this.x + this.width / 2, y: this.y + this.height / 2 };
   }
 
+  // Returns {kind:'angle', value:θ} when the mouse is within THRESHOLD px of the border,
+  // null otherwise. The snap point is the border point in the direction of the mouse from center.
   findConnectionPoint(x, y) {
     if (!isNodeShape(this.type)) return null;
-    const pts = this.getConnectionPoints();
-    for (const [dir, pt] of Object.entries(pts)) {
-      if (Math.hypot(x - pt.x, y - pt.y) < 12) return dir;
+    const cx    = this.x + this.width  / 2;
+    const cy    = this.y + this.height / 2;
+    const angle = Math.atan2(y - cy, x - cx);
+    const bp    = this._borderPoint(angle);
+    const THRESHOLD = 20;
+    if (Math.hypot(x - bp.x, y - bp.y) < THRESHOLD) {
+      return { kind: 'angle', value: angle };
     }
     return null;
   }
 
+  // Draw a dashed glow ring around the whole border plus a snap dot at the hovered point
   drawConnectionPoints(highlight = false) {
     if (!isNodeShape(this.type)) return;
-    const pts = this.getConnectionPoints();
-    Object.entries(pts).forEach(([dir, pt]) => {
+    const isHovered = hoveredConnectionPoint?.shape === this;
+    const cx = this.x + this.width  / 2;
+    const cy = this.y + this.height / 2;
+
+    // Dashed border ring
+    ctx.save();
+    const gap = 6 / viewScale;
+    ctx.setLineDash([5 / viewScale, 3 / viewScale]);
+    ctx.strokeStyle = isHovered ? '#0d6efd' : (highlight ? '#6c757d' : '#adb5bd');
+    ctx.lineWidth   = (isHovered ? 2 : 1.5) / viewScale;
+
+    if (this.type === 'class') {
       ctx.beginPath();
-      ctx.arc(pt.x, pt.y, 5, 0, 2 * Math.PI);
-      ctx.fillStyle =
-        (hoveredConnectionPoint?.shape === this && hoveredConnectionPoint?.point === dir)
-          ? '#0d6efd'
-          : highlight ? '#6c757d' : '#adb5bd';
-      ctx.fill();
-      ctx.strokeStyle = '#495057';
-      ctx.lineWidth   = 1;
+      ctx.ellipse(cx, cy, this.width / 2 + gap, this.height / 2 + gap, 0, 0, 2 * Math.PI);
       ctx.stroke();
-    });
+    } else if (this.type === 'interface') {
+      ctx.beginPath();
+      ctx.moveTo(cx,                          this.y - gap);
+      ctx.lineTo(this.x + this.width  + gap,  cy);
+      ctx.lineTo(cx,                          this.y + this.height + gap);
+      ctx.lineTo(this.x - gap,                cy);
+      ctx.closePath();
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Snap dot at the currently hovered border point
+    if (isHovered && hoveredConnectionPoint.point?.kind === 'angle') {
+      const pt = this._borderPoint(hoveredConnectionPoint.point.value);
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, 5 / viewScale, 0, 2 * Math.PI);
+      ctx.fillStyle   = '#0d6efd';
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth   = 1.5 / viewScale;
+      ctx.stroke();
+    }
   }
 
   drawResizeHandles() {
@@ -231,12 +274,83 @@ class Shape {
     ctx.fill();
   }
 
+  // Quadratic bezier control point (perpendicular offset from midpoint).
+  // When curveOffset===0 (auto), parallel connectors between the same node pair
+  // are spread out symmetrically so they never overlap.
+  _curveControlPoint(sx, sy, ex, ey) {
+    const mx  = (sx + ex) / 2;
+    const my  = (sy + ey) / 2;
+    const dx  = ex - sx, dy = ey - sy;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx  = -dy / len, ny = dx / len;  // perpendicular unit vector (90° CCW)
+
+    let off;
+    if (this.curveOffset !== 0) {
+      // Manual override from the property panel
+      off = this.curveOffset;
+    } else if (this.startNode && this.endNode) {
+      // Find all connectors that share exactly the same start→end node pair
+      const parallel = shapes.filter(s =>
+        isConnectorShape(s.type) &&
+        s.startNode === this.startNode &&
+        s.endNode   === this.endNode
+      );
+      const total = parallel.length;
+      const idx   = parallel.indexOf(this);
+
+      if (total <= 1) {
+        // Single connector — gentle fixed curve so it doesn't look like a straight line
+        const magnitude = Math.min(80, Math.max(25, len * 0.15));
+        off = magnitude;
+      } else {
+        // Multiple connectors — spread symmetrically around the straight line.
+        // step scales with distance so arrows don't crowd on short edges.
+        const step = Math.min(65, Math.max(30, len * 0.13));
+        const center = (total - 1) / 2;
+        off = (idx - center) * step;
+      }
+    } else {
+      // Unattached preview line — small fixed offset
+      const magnitude = Math.min(80, Math.max(25, len * 0.15));
+      off = magnitude;
+    }
+    return { cx: mx + nx * off, cy: my + ny * off };
+  }
+
   _midLabel(sx, sy, ex, ey, label) {
+    let lx, ly;
+    if (this.curved) {
+      const { cx, cy } = this._curveControlPoint(sx, sy, ex, ey);
+      lx = 0.25 * sx + 0.5 * cx + 0.25 * ex;
+      ly = 0.25 * sy + 0.5 * cy + 0.25 * ey;
+    } else {
+      lx = (sx + ex) / 2;
+      ly = (sy + ey) / 2;
+    }
+
+    // Offset the label perpendicularly to the arrow so it sits beside, not on, the line
+    const dx = ex - sx, dy = ey - sy;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len, ny = dx / len;   // 90° CCW perpendicular unit vector
+    const OFFSET = 14;
+    lx += nx * OFFSET;
+    ly += ny * OFFSET;
+
     ctx.font         = '11px Arial';
-    ctx.fillStyle    = '#444';
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(label, (sx + ex) / 2, (sy + ey) / 2 - 10);
+
+    // White pill background so the label never overlaps the line visually
+    const tw = ctx.measureText(label).width;
+    const th = 12;
+    const pad = 3;
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.beginPath();
+    ctx.roundRect(lx - tw / 2 - pad, ly - th / 2 - pad, tw + pad * 2, th + pad * 2, 3);
+    ctx.fill();
+
+    ctx.fillStyle = '#444';
+    ctx.fillText(label, lx, ly);
   }
 
   // ── Main draw dispatcher ──────────────────────────────────
@@ -248,17 +362,11 @@ class Shape {
     else if (inGroup)                { ctx.shadowColor = '#fd7e14'; ctx.shadowBlur = 8;  }
 
     switch (this.type) {
-      case 'class':            this._drawClass();          break;
-      case 'interface':        this._drawInterface();      break;
-      case 'class-header':     this._drawClassHeader();    break;
-      case 'field':            this._drawField();          break;
-      case 'method-public':
-      case 'method-private':
-      case 'method-protected': this._drawMethod();         break;
-      case 'extends':          this._drawExtendsArrow();   break;
-      case 'implements':       this._drawImplementsArrow();break;
-      case 'calls':            this._drawCallsArrow();     break;
-      case 'member-link':      this._drawMemberLink();     break;
+      case 'class':      this._drawClass();           break;
+      case 'interface':  this._drawInterface();        break;
+      case 'extends':    this._drawExtendsArrow();     break;
+      case 'implements': this._drawImplementsArrow();  break;
+      case 'calls':      this._drawCallsArrow();       break;
     }
 
     ctx.shadowColor = 'transparent';
@@ -274,204 +382,351 @@ class Shape {
   }
 
   // ── Node draw methods ─────────────────────────────────────
-  _drawClass() {
-    const HDR = 34;
-    const name = this.text || 'ClassName';
-    const lw = selectedShape === this ? 3 : 2;
 
-    // Background
-    ctx.fillStyle = '#f0f0f0';
-    ctx.fillRect(this.x, this.y, this.width, this.height);
-    // Header bar
-    ctx.fillStyle = '#add8e6';
-    ctx.fillRect(this.x, this.y, this.width, HDR);
-    // Border
-    ctx.strokeStyle = this.strokeColor;
-    ctx.lineWidth = lw;
-    ctx.strokeRect(this.x, this.y, this.width, this.height);
+  // Rounded-rectangle path helper (does not stroke/fill — caller does that)
+  _roundRect(x, y, w, h, r) {
     ctx.beginPath();
-    ctx.moveTo(this.x, this.y + HDR);
-    ctx.lineTo(this.x + this.width, this.y + HDR);
-    ctx.stroke();
-    // Label
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+
+  // ── Layout helpers ────────────────────────────────────────
+  // Build method label string from a method data object
+  static _methodLabel(m) {
+    const parts = [];
+    if (m.visibility && m.visibility !== 'package') parts.push(m.visibility);
+    if (m.isStatic)   parts.push('static');
+    if (m.isAbstract) parts.push('abstract');
+    const prefix = parts.join(' ');
+    return `${prefix}${prefix ? ' ' : ''}${m.name || 'method'}(${m.params || ''}): ${m.returnType || 'void'}`;
+  }
+
+  // Build field label for DOT output — omits visibility (matches backend format_field_for_diagram)
+  static _fieldLabel(f) {
+    const parts = [];
+    if (f.isStatic)  parts.push('static');
+    if (f.isFinal)   parts.push('final');
+    if (f.fieldType) parts.push(f.fieldType);
+    parts.push(f.name || 'field');
+    return parts.join(' ');
+  }
+
+  // Build field label for canvas display — includes visibility so the user can see it
+  static _fieldCanvasLabel(f) {
+    const parts = [];
+    if (f.visibility && f.visibility !== 'package') parts.push(f.visibility);
+    if (f.isStatic)  parts.push('static');
+    if (f.isFinal)   parts.push('final');
+    if (f.fieldType) parts.push(f.fieldType);
+    parts.push(f.name || 'field');
+    return parts.join(' ');
+  }
+
+  // Draw the content (name, methods, fields) inside a node's bounding box.
+  // `clipPath` is a function that sets up the clip region before drawing.
+  _drawNodeContent(cx, clipPath) {
+    const PAD    = 14;
+    const NAME_H = 22;
+    const ROW_H  = 17;
+    const FIELD_H = 19;
+
+    const name = this.text || (this.type === 'interface' ? 'InterfaceName' : 'ClassName');
+    const nameLabel = this.type === 'interface' ? `${name} (interface)`
+                    : this.isAbstract           ? `${name} (abstract)`
+                    : name;
+
+    const totalH = NAME_H
+                 + this.methods.length * ROW_H
+                 + (this.fields.length > 0 ? 4 + this.fields.length * FIELD_H : 0);
+
+    let yPos = this.y + this.height / 2 - totalH / 2;
+
+    ctx.save();
+    clipPath();
+    ctx.clip();
+
+    // Class name — bold
+    ctx.font         = 'bold 13px Arial';
+    ctx.fillStyle    = '#000';
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle    = '#000';
-    if (this.isAbstract) {
-      ctx.font = '10px Arial'; ctx.fillText('«abstract»', this.x + this.width / 2, this.y + HDR / 2 - 7);
-      ctx.font = 'italic bold 12px Arial';
-    } else {
-      ctx.font = 'bold 13px Arial';
+    ctx.fillText(nameLabel, cx, yPos + NAME_H / 2, this.width - PAD * 2);
+    yPos += NAME_H;
+
+    // Methods — centered with underline
+    ctx.font      = '11px Arial';
+    ctx.textAlign = 'center';
+    const textW = this.width - PAD * 2;
+    this.methods.forEach(m => {
+      const lbl = Shape._methodLabel(m);
+      ctx.fillStyle = '#000';
+      ctx.fillText(lbl, cx, yPos + ROW_H / 2, textW);
+      // Underline — centered under the text
+      const tw = Math.min(ctx.measureText(lbl).width, textW);
+      ctx.beginPath();
+      ctx.moveTo(cx - tw / 2, yPos + ROW_H / 2 + 7);
+      ctx.lineTo(cx + tw / 2, yPos + ROW_H / 2 + 7);
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth   = 0.8;
+      ctx.setLineDash([]);
+      ctx.stroke();
+      yPos += ROW_H;
+    });
+
+    // Fields — yellow boxes, inset to stay within ellipse boundary
+    if (this.fields.length > 0) {
+      yPos += 4;
+      const cy_ell = this.y + this.height / 2;
+      const rx = this.width / 2;
+      const ry = this.height / 2;
+      this.fields.forEach(f => {
+        const lbl = Shape._fieldCanvasLabel(f);
+        const fieldCenterY = yPos + (FIELD_H - 2) / 2;
+        const dy = fieldCenterY - cy_ell;
+        const t = Math.abs(dy) < ry ? Math.sqrt(Math.max(0, 1 - (dy * dy) / (ry * ry))) : 0;
+        const availW = 2 * rx * t;
+        // Use 75% of available ellipse width at this y, capped at (width - PAD*4)
+        const boxW = Math.max(60, Math.min(this.width - PAD * 4, availW * 0.75));
+        const boxX = cx - boxW / 2;
+        ctx.fillStyle = '#ffffe0';
+        ctx.fillRect(boxX, yPos, boxW, FIELD_H - 2);
+        ctx.strokeStyle = '#888';
+        ctx.lineWidth   = 0.8;
+        ctx.setLineDash([]);
+        ctx.strokeRect(boxX, yPos, boxW, FIELD_H - 2);
+        ctx.fillStyle    = '#000';
+        ctx.textAlign    = 'center';
+        ctx.font         = '11px Arial';
+        ctx.fillText(lbl, cx, yPos + (FIELD_H - 2) / 2, boxW - 8);
+        yPos += FIELD_H;
+      });
     }
-    ctx.fillText(name, this.x + this.width / 2, this.y + (this.isAbstract ? HDR / 2 + 6 : HDR / 2));
+
+    ctx.restore();
+  }
+
+  // Grow the node to fit its current content (never shrinks below initial minimums)
+  autoResizeForContent() {
+    if (!isNodeShape(this.type) || !ctx) return;
+    const PAD = 14, NAME_H = 22, ROW_H = 17, FIELD_H = 19;
+    const MIN_W = 200, MIN_H = 160;
+
+    const contentH = NAME_H
+      + this.methods.length * ROW_H
+      + (this.fields.length > 0 ? 4 + this.fields.length * FIELD_H : 0);
+    const neededH = contentH + PAD * 4;
+
+    // Measure widest text to determine minimum width
+    const savedFont = ctx.font;
+    let maxTextW = 0;
+    const nameLabel = this.type === 'interface' ? `${this.text || 'InterfaceName'} (interface)`
+                    : this.isAbstract           ? `${this.text || 'ClassName'} (abstract)`
+                    : (this.text || 'ClassName');
+    ctx.font = 'bold 13px Arial';
+    maxTextW = Math.max(maxTextW, ctx.measureText(nameLabel).width);
+    ctx.font = '11px Arial';
+    this.methods.forEach(m => {
+      maxTextW = Math.max(maxTextW, ctx.measureText(Shape._methodLabel(m)).width);
+    });
+    this.fields.forEach(f => {
+      maxTextW = Math.max(maxTextW, ctx.measureText(Shape._fieldCanvasLabel(f)).width);
+    });
+    ctx.font = savedFont;
+
+    // For an ellipse the visible text area is narrower than the full width — add generous padding
+    const neededW = maxTextW + PAD * 6;
+
+    this.height = Math.max(this.height, MIN_H, neededH);
+    this.width  = Math.max(this.width,  MIN_W, neededW);
+  }
+
+  _drawClass() {
+    const lw = selectedShape === this ? 3 : 2;
+    const cx = this.x + this.width  / 2;
+    const cy = this.y + this.height / 2;
+    const rx = this.width  / 2;
+    const ry = this.height / 2;
+
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, 2 * Math.PI);
+    ctx.fillStyle   = 'white';
+    ctx.fill();
+    ctx.strokeStyle = selectedShape === this ? '#0d6efd' : this.strokeColor;
+    ctx.lineWidth   = lw;
+    ctx.setLineDash([]);
+    ctx.stroke();
+
+    if (this.isAbstract) {
+      const sh = 5;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, Math.max(4, rx - sh), Math.max(4, ry - sh), 0, 0, 2 * Math.PI);
+      ctx.stroke();
+    }
+
+    this._drawNodeContent(cx, () => {
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, Math.max(1, rx - lw), Math.max(1, ry - lw), 0, 0, 2 * Math.PI);
+    });
   }
 
   _drawInterface() {
-    const HDR = 34;
-    const name = this.text || 'InterfaceName';
     const lw = selectedShape === this ? 3 : 2;
+    const cx = this.x + this.width  / 2;
+    const cy = this.y + this.height / 2;
 
-    ctx.fillStyle = '#f5f8ff';
-    ctx.fillRect(this.x, this.y, this.width, this.height);
-    ctx.fillStyle = '#c4deff';
-    ctx.fillRect(this.x, this.y, this.width, HDR);
-    ctx.strokeStyle = this.strokeColor;
-    ctx.lineWidth = lw;
-    ctx.setLineDash([6, 3]);
-    ctx.strokeRect(this.x, this.y, this.width, this.height);
-    ctx.setLineDash([]);
     ctx.beginPath();
-    ctx.moveTo(this.x, this.y + HDR);
-    ctx.lineTo(this.x + this.width, this.y + HDR);
-    ctx.stroke();
-    ctx.textAlign    = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle    = '#000';
-    ctx.font = '10px Arial'; ctx.fillText('«interface»', this.x + this.width / 2, this.y + HDR / 2 - 7);
-    ctx.font = 'italic bold 12px Arial';
-    ctx.fillText(name, this.x + this.width / 2, this.y + HDR / 2 + 7);
-  }
-
-  _drawField() {
-    const EAR = 10;
-    const lbl = this.buildFieldLabel();
-    ctx.fillStyle = '#ffffe0';
-    ctx.beginPath();
-    ctx.moveTo(this.x, this.y);
-    ctx.lineTo(this.x + this.width - EAR, this.y);
-    ctx.lineTo(this.x + this.width, this.y + EAR);
-    ctx.lineTo(this.x + this.width, this.y + this.height);
-    ctx.lineTo(this.x, this.y + this.height);
+    ctx.moveTo(cx,                    this.y);
+    ctx.lineTo(this.x + this.width,   cy);
+    ctx.lineTo(cx,                    this.y + this.height);
+    ctx.lineTo(this.x,                cy);
     ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = this.strokeColor;
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(this.x + this.width - EAR, this.y);
-    ctx.lineTo(this.x + this.width - EAR, this.y + EAR);
-    ctx.lineTo(this.x + this.width, this.y + EAR);
-    ctx.stroke();
-    ctx.font = '11px monospace';
-    ctx.fillStyle    = '#000';
-    ctx.textAlign    = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(lbl, this.x + 6, this.y + this.height / 2, this.width - 20);
-  }
-
-  _drawMethod() {
-    const TAB_W = 8, TAB_H = 6;
-    const lbl = this.buildMethodLabel();
-    const fill = this.type === 'method-public'  ? '#90ee90'
-               : this.type === 'method-private' ? '#f08080'
-               : '#d3d3d3';  // protected
-    ctx.fillStyle = fill;
-    ctx.fillRect(this.x + TAB_W, this.y, this.width - TAB_W, this.height);
-    ctx.strokeStyle = this.strokeColor;
-    ctx.strokeRect(this.x + TAB_W, this.y, this.width - TAB_W, this.height);
-    // Left tab notches (component shape)
-    const topTabY = this.y + Math.floor(this.height * 0.25);
-    const botTabY = this.y + Math.floor(this.height * 0.60);
-    ctx.fillRect(this.x, topTabY, TAB_W, TAB_H);
-    ctx.strokeRect(this.x, topTabY, TAB_W, TAB_H);
-    ctx.fillRect(this.x, botTabY, TAB_W, TAB_H);
-    ctx.strokeRect(this.x, botTabY, TAB_W, TAB_H);
-    ctx.font = '11px monospace';
-    ctx.fillStyle    = '#000';
-    ctx.textAlign    = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(lbl, this.x + TAB_W + 5, this.y + this.height / 2, this.width - TAB_W - 10);
-  }
-
-  // ── Class-header ellipse node ─────────────────────────────
-  _drawClassHeader() {
-    const lbl = this.text || 'ClassName';
-    const cx  = this.x + this.width  / 2;
-    const cy  = this.y + this.height / 2;
-    const rx  = this.width  / 2;
-    const ry  = this.height / 2;
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, rx, ry, 0, 0, 2 * Math.PI);
-    ctx.fillStyle   = '#add8e6';
+    ctx.fillStyle   = 'white';
     ctx.fill();
     ctx.strokeStyle = selectedShape === this ? '#0d6efd' : this.strokeColor;
-    ctx.lineWidth   = selectedShape === this ? 3 : 2;
+    ctx.lineWidth   = lw;
+    ctx.setLineDash([]);
     ctx.stroke();
-    ctx.font         = 'bold 12px Arial';
-    ctx.fillStyle    = '#000';
-    ctx.textAlign    = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(lbl, cx, cy, this.width - 10);
+
+    // Clip to the diamond for content
+    this._drawNodeContent(cx, () => {
+      ctx.beginPath();
+      ctx.moveTo(cx,                        this.y + lw);
+      ctx.lineTo(this.x + this.width - lw,  cy);
+      ctx.lineTo(cx,                        this.y + this.height - lw);
+      ctx.lineTo(this.x + lw,               cy);
+      ctx.closePath();
+    });
   }
 
   // ── Connector draw methods ────────────────────────────────
-  _drawMemberLink() {
-    const { startX, startY, endX, endY } = this.getConnectorCoords();
-    ctx.setLineDash([7, 4]);
-    ctx.strokeStyle = selectedShape === this ? '#0d6efd' : '#555';
-    ctx.lineWidth   = selectedShape === this ? 3 : 1.5;
-    ctx.beginPath();
-    ctx.moveTo(startX, startY);
-    ctx.lineTo(endX, endY);
-    ctx.stroke();
-    ctx.setLineDash([]);
+  // Draw a path (moveTo already done) — straight or curved quadratic bezier
+  _pathLine(sx, sy, ex, ey) {
+    if (this.curved) {
+      const { cx, cy } = this._curveControlPoint(sx, sy, ex, ey);
+      ctx.quadraticCurveTo(cx, cy, ex, ey);
+    } else {
+      ctx.lineTo(ex, ey);
+    }
+  }
+
+  // Endpoint angle: tangent at t=1 of the bezier (control→end), or straight angle
+  _endAngle(sx, sy, ex, ey) {
+    if (this.curved) {
+      const { cx, cy } = this._curveControlPoint(sx, sy, ex, ey);
+      return Math.atan2(ey - cy, ex - cx);
+    }
+    return Math.atan2(ey - sy, ex - sx);
   }
 
   _drawExtendsArrow() {
-    const { startX, startY, endX, endY } = this.getConnectorCoords();
-    const LEN = 18;
-    const angle = Math.atan2(endY - startY, endX - startX);
+    const { startX: sx, startY: sy, endX: ex, endY: ey } = this.getConnectorCoords();
+    const LEN   = 18;
+    const angle = this._endAngle(sx, sy, ex, ey);
+    const tipX  = ex - LEN * Math.cos(angle);
+    const tipY  = ey - LEN * Math.sin(angle);
     ctx.setLineDash([]);
     ctx.strokeStyle = this.strokeColor;
     ctx.lineWidth   = selectedShape === this ? 3 : 2;
     ctx.beginPath();
-    ctx.moveTo(startX, startY);
-    ctx.lineTo(endX - LEN * Math.cos(angle), endY - LEN * Math.sin(angle));
+    ctx.moveTo(sx, sy);
+    if (this.curved) {
+      const { cx, cy } = this._curveControlPoint(sx, sy, ex, ey);
+      // Curve stops just before the arrowhead tip
+      const tRatio = 1 - LEN / Math.hypot(ex - sx, ey - sy);
+      const stX = (1 - tRatio) * (1 - tRatio) * sx + 2 * (1 - tRatio) * tRatio * cx + tRatio * tRatio * ex;
+      const stY = (1 - tRatio) * (1 - tRatio) * sy + 2 * (1 - tRatio) * tRatio * cy + tRatio * tRatio * ey;
+      ctx.quadraticCurveTo(cx, cy, stX, stY);
+    } else {
+      ctx.lineTo(tipX, tipY);
+    }
     ctx.stroke();
-    this._hollowArrowhead(endX, endY, angle, LEN);
-    this._midLabel(startX, startY, endX, endY, 'extends');
+    this._hollowArrowhead(ex, ey, angle, LEN);
+    this._midLabel(sx, sy, ex, ey, 'extends');
   }
 
   _drawImplementsArrow() {
-    const { startX, startY, endX, endY } = this.getConnectorCoords();
-    const LEN = 18;
-    const angle = Math.atan2(endY - startY, endX - startX);
+    const { startX: sx, startY: sy, endX: ex, endY: ey } = this.getConnectorCoords();
+    const LEN   = 18;
+    const angle = this._endAngle(sx, sy, ex, ey);
+    const tipX  = ex - LEN * Math.cos(angle);
+    const tipY  = ey - LEN * Math.sin(angle);
     ctx.setLineDash([8, 4]);
     ctx.strokeStyle = this.strokeColor;
     ctx.lineWidth   = selectedShape === this ? 3 : 2;
     ctx.beginPath();
-    ctx.moveTo(startX, startY);
-    ctx.lineTo(endX - LEN * Math.cos(angle), endY - LEN * Math.sin(angle));
+    ctx.moveTo(sx, sy);
+    if (this.curved) {
+      const { cx, cy } = this._curveControlPoint(sx, sy, ex, ey);
+      const tRatio = 1 - LEN / Math.hypot(ex - sx, ey - sy);
+      const stX = (1 - tRatio) * (1 - tRatio) * sx + 2 * (1 - tRatio) * tRatio * cx + tRatio * tRatio * ex;
+      const stY = (1 - tRatio) * (1 - tRatio) * sy + 2 * (1 - tRatio) * tRatio * cy + tRatio * tRatio * ey;
+      ctx.quadraticCurveTo(cx, cy, stX, stY);
+    } else {
+      ctx.lineTo(tipX, tipY);
+    }
     ctx.stroke();
     ctx.setLineDash([]);
-    this._hollowArrowhead(endX, endY, angle, LEN);
-    this._midLabel(startX, startY, endX, endY, 'implements');
+    this._hollowArrowhead(ex, ey, angle, LEN);
+    this._midLabel(sx, sy, ex, ey, 'implements');
   }
 
   _drawCallsArrow() {
-    const { startX, startY, endX, endY } = this.getConnectorCoords();
-    const LEN = 14;
-    const angle = Math.atan2(endY - startY, endX - startX);
+    const { startX: sx, startY: sy, endX: ex, endY: ey } = this.getConnectorCoords();
+    const LEN   = 14;
+    const angle = this._endAngle(sx, sy, ex, ey);
     ctx.setLineDash([]);
     ctx.strokeStyle = '#0000cd';
     ctx.lineWidth   = selectedShape === this ? 3 : 2;
     ctx.beginPath();
-    ctx.moveTo(startX, startY);
-    ctx.lineTo(endX, endY);
+    ctx.moveTo(sx, sy);
+    this._pathLine(sx, sy, ex, ey);
     ctx.stroke();
-    this._filledArrowhead(endX, endY, angle, LEN, '#0000cd');
-    this._midLabel(startX, startY, endX, endY, 'calls');
+    this._filledArrowhead(ex, ey, angle, LEN, '#0000cd');
+    if (this.label) this._midLabel(sx, sy, ex, ey, this.label);
   }
 
   // ── Hit testing ───────────────────────────────────────────
   contains(x, y) {
     if (isConnectorShape(this.type)) return this._containsLine(x, y);
+    if (this.type === 'class') {
+      const cx = this.x + this.width  / 2;
+      const cy = this.y + this.height / 2;
+      const rx = this.width  / 2;
+      const ry = this.height / 2;
+      const dx = (x - cx) / rx;
+      const dy = (y - cy) / ry;
+      return dx * dx + dy * dy <= 1;
+    }
+    if (this.type === 'interface') {
+      const cx = this.x + this.width  / 2;
+      const cy = this.y + this.height / 2;
+      const dx = Math.abs(x - cx) / (this.width  / 2);
+      const dy = Math.abs(y - cy) / (this.height / 2);
+      return dx + dy <= 1;
+    }
     return x >= this.x && x <= this.x + this.width &&
            y >= this.y && y <= this.y + this.height;
   }
 
   _containsLine(x, y) {
-    const { startX, startY, endX, endY } = this.getConnectorCoords();
-    return this._ptLineDist(x, y, startX, startY, endX, endY) < 8;
+    const { startX: sx, startY: sy, endX: ex, endY: ey } = this.getConnectorCoords();
+    if (!this.curved) return this._ptLineDist(x, y, sx, sy, ex, ey) < 8;
+    // Sample points along the quadratic bezier for hit testing
+    const { cx, cy } = this._curveControlPoint(sx, sy, ex, ey);
+    for (let t = 0; t <= 1; t += 0.05) {
+      const bx = (1 - t) * (1 - t) * sx + 2 * (1 - t) * t * cx + t * t * ex;
+      const by = (1 - t) * (1 - t) * sy + 2 * (1 - t) * t * cy + t * t * ey;
+      if (Math.hypot(x - bx, y - by) < 8) return true;
+    }
+    return false;
   }
 
   _ptLineDist(px, py, x1, y1, x2, y2) {
@@ -853,11 +1108,10 @@ function handleMouseUp(e) {
 
   } else if (isDrawing) {
     if (isNodeShape(currentTool)) {
-      const isLarge = currentTool === 'class' || currentTool === 'interface';
       let dw = Math.abs(x - startX);
       let dh = Math.abs(y - startY);
-      if (dw < 15) dw = isLarge ? 200 : 200;
-      if (dh < 15) dh = isLarge ? 150 : 36;
+      if (dw < 15) dw = 200;
+      if (dh < 15) dh = 160;
 
       const shape = new Shape(
         currentTool,
@@ -884,13 +1138,9 @@ function handleDoubleClick(e) {
   const { x, y } = screenToCanvas(sx, sy);
 
   if (!selectedShape || !isNodeShape(selectedShape.type)) return;
-  // Confirm double-click landed on the selected shape (world-space hit test)
   if (!selectedShape.contains(x, y)) return;
 
-  const lbl = selectedShape.type.startsWith('method') ? 'Method name:'
-            : selectedShape.type === 'field'           ? 'Field name:'
-            : 'Class / Interface name:';
-  const text = prompt(lbl, selectedShape.text);
+  const text = prompt('Class / Interface name:', selectedShape.text);
   if (text !== null) {
     selectedShape.text = text;
     updatePropertyEditor();
@@ -925,20 +1175,14 @@ function _sanitize(name) {
   return (name || 'unnamed').replace(/[^a-zA-Z0-9_]/g, '_');
 }
 
-function _containedIn(inner, outer) {
-  const cx = inner.x + inner.width  / 2;
-  const cy = inner.y + inner.height / 2;
-  return cx >= outer.x && cx <= outer.x + outer.width &&
-         cy >= outer.y && cy <= outer.y + outer.height;
-}
 
 function shapesToBackendDOT() {
-  const classNodes   = shapes.filter(s => s.type === 'class' || s.type === 'interface');
-  const headerNodes  = shapes.filter(s => s.type === 'class-header');
-  const fieldNodes   = shapes.filter(s => s.type === 'field');
-  const methodNodes  = shapes.filter(s => s.type.startsWith('method-'));
-  const connectors   = shapes.filter(s => isConnectorShape(s.type));
-  const memberLinks  = connectors.filter(s => s.type === 'member-link');
+  function escapeHtml(s) {
+    return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  const classNodes = shapes.filter(s => s.type === 'class' || s.type === 'interface');
+  const connectors = shapes.filter(s => isConnectorShape(s.type));
 
   let dot = 'digraph JavaClasses {\n';
   dot += '    rankdir=TB;\n';
@@ -946,7 +1190,8 @@ function shapesToBackendDOT() {
   dot += '    node [fontname="Arial"];\n';
   dot += '    edge [fontname="Arial", fontsize=10];\n\n';
 
-  // ── Class/Interface subgraphs ──────────────────────────────
+  // ── Class/Interface nodes with HTML labels ─────────────────
+  // Matches backend build_html_label exactly.
   classNodes.forEach(cls => {
     const rawName = cls.text || `node${cls.id}`;
     const clsId   = _sanitize(rawName);
@@ -955,151 +1200,54 @@ function shapesToBackendDOT() {
     if (cls.type === 'interface') classLabel = `${rawName} (interface)`;
     else if (cls.isAbstract)     classLabel = `${rawName} (abstract)`;
 
-    const containedFields   = fieldNodes.filter(f  => _containedIn(f,  cls));
-    const containedMethods  = methodNodes.filter(m  => _containedIn(m,  cls));
-    // Explicit class-header nodes placed inside this class box
-    const containedHeaders  = headerNodes.filter(h  => _containedIn(h,  cls));
-    // Use explicit header label if one is placed inside
-    const hdrLabel = containedHeaders.length > 0
-      ? (containedHeaders[0].text || classLabel)
-      : classLabel;
+    const publicMethods  = cls.methods.filter(m => m.visibility !== 'private');
+    const privateMethods = cls.methods.filter(m => m.visibility === 'private');
+    const publicFields   = cls.fields.filter(f => f.visibility !== 'private');
+    const privateFields  = cls.fields.filter(f => f.visibility === 'private');
 
-    dot += `    subgraph cluster_${clsId} {\n`;
-    dot += `        label="${classLabel}";\n`;
-    dot += `        style=filled;\n`;
-    dot += `        color=lightgrey;\n`;
-    dot += `        node [shape=box, style=filled, fillcolor=white];\n\n`;
+    let html = '<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="2" CELLPADDING="4">';
+    html += `<TR><TD><B><FONT POINT-SIZE="14">${escapeHtml(classLabel)}</FONT></B></TD></TR>`;
 
-    dot += `        "${clsId}_class" [label="${hdrLabel}", shape=ellipse, style=filled, fillcolor=lightblue];\n`;
+    publicMethods.forEach(m => {
+      html += `<TR><TD><U>${escapeHtml(Shape._methodLabel(m))}</U></TD></TR>`;
+    });
+    publicFields.forEach(f => {
+      html += `<TR><TD BORDER="1" BGCOLOR="lightyellow">${escapeHtml(Shape._fieldLabel(f))}</TD></TR>`;
+    });
 
-    // Fields subgraph
-    if (containedFields.length > 0) {
-      dot += `        subgraph cluster_${clsId}_fields {\n`;
-      dot += `            label="Fields";\n`;
-      dot += `            style=dashed;\n`;
-      containedFields.forEach(f => {
-        const fId  = `${clsId}_${_sanitize(f.text || `f${f.id}`)}`;
-        const lbl  = f.buildFieldLabel();
-        dot += `            "${fId}" [label="${lbl}", shape=note, style=filled, fillcolor=lightyellow];\n`;
-      });
-      dot += `        }\n`;
-    }
+    const hasPublic  = publicMethods.length > 0 || publicFields.length > 0;
+    const hasPrivate = privateMethods.length > 0 || privateFields.length > 0;
+    if (hasPublic && hasPrivate) html += '<HR/>';
 
-    // Methods subgraph
-    if (containedMethods.length > 0) {
-      dot += `        subgraph cluster_${clsId}_methods {\n`;
-      dot += `            label="Methods";\n`;
-      dot += `            style=dashed;\n`;
-      containedMethods.forEach(m => {
-        const mId   = `${clsId}_${_sanitize(m.text || `m${m.id}`)}`;
-        const lbl   = m.buildMethodLabel();
-        const color = m.type === 'method-public'  ? 'lightgreen'
-                    : m.type === 'method-private' ? 'lightcoral'
-                    : 'lightgray';
-        dot += `            "${mId}" [label="${lbl}", shape=component, style=filled, fillcolor=${color}];\n`;
-      });
-      dot += `        }\n`;
-    }
+    privateFields.forEach(f => {
+      html += `<TR><TD BORDER="1" BGCOLOR="lightyellow">${escapeHtml(Shape._fieldLabel(f))}</TD></TR>`;
+    });
+    privateMethods.forEach(m => {
+      html += `<TR><TD><U>${escapeHtml(Shape._methodLabel(m))}</U></TD></TR>`;
+    });
 
-    // Internal connections: class_header → each field / method.
-    // If explicit member-links exist from a contained header, use those;
-    // otherwise auto-connect all contained fields & methods.
-    const containedHeaderSet = new Set(containedHeaders);
-    const explicitLinks = memberLinks.filter(
-      l => l.startNode && containedHeaderSet.has(l.startNode) && _containedIn(l.startNode, cls)
-    );
+    html += '</TABLE>';
 
-    if (explicitLinks.length > 0) {
-      // Only emit the member-links the user explicitly drew
-      explicitLinks.forEach(l => {
-        const targetNode = l.endNode;
-        if (!targetNode) return;
-        let targetId;
-        if (targetNode.type === 'field') {
-          targetId = `${clsId}_${_sanitize(targetNode.text || `f${targetNode.id}`)}`;
-        } else if (targetNode.type.startsWith('method-')) {
-          targetId = `${clsId}_${_sanitize(targetNode.text || `m${targetNode.id}`)}`;
-        } else {
-          targetId = `${_sanitize(targetNode.text || `node${targetNode.id}`)}_class`;
-        }
-        dot += `        "${clsId}_class" -> "${targetId}" [style=dashed, arrowhead=none];\n`;
-      });
-    } else {
-      // Auto-connect all contained fields & methods
-      containedFields.forEach(f => {
-        const fId = `${clsId}_${_sanitize(f.text || `f${f.id}`)}`;
-        dot += `        "${clsId}_class" -> "${fId}" [style=dashed, arrowhead=none];\n`;
-      });
-      containedMethods.forEach(m => {
-        const mId = `${clsId}_${_sanitize(m.text || `m${m.id}`)}`;
-        dot += `        "${clsId}_class" -> "${mId}" [style=dashed, arrowhead=none];\n`;
-      });
-    }
-
-    dot += `    }\n\n`;
+    const shape = cls.type === 'interface' ? 'diamond' : 'circle';
+    dot += `    "${clsId}_class" [shape=${shape}, label=<${html}>, style=filled, fillcolor=white];\n`;
   });
-
-  // ── Standalone class-header nodes not inside any class box ─
-  headerNodes
-    .filter(h => !classNodes.some(c => _containedIn(h, c)))
-    .forEach(h => {
-      const hId  = _sanitize(h.text || `hdr${h.id}`);
-      const lbl  = h.text || `hdr${h.id}`;
-      dot += `    "${hId}_class" [label="${lbl}", shape=ellipse, style=filled, fillcolor=lightblue];\n`;
-    });
-
-  // ── Standalone member-link edges not inside any class box ──
-  memberLinks
-    .filter(l => l.startNode && l.endNode)
-    .filter(l => !classNodes.some(c => _containedIn(l.startNode, c)))
-    .forEach(l => {
-      const fromId = l.startNode.type === 'class-header'
-        ? `${_sanitize(l.startNode.text || `hdr${l.startNode.id}`)}_class`
-        : _sanitize(l.startNode.text || `node${l.startNode.id}`);
-      const toNode = l.endNode;
-      let toId;
-      if (toNode.type === 'field') {
-        const parent = classNodes.find(c => _containedIn(toNode, c));
-        const pName  = parent ? _sanitize(parent.text || `node${parent.id}`) : 'unknown';
-        toId = `${pName}_${_sanitize(toNode.text || `f${toNode.id}`)}`;
-      } else if (toNode.type.startsWith('method-')) {
-        const parent = classNodes.find(c => _containedIn(toNode, c));
-        const pName  = parent ? _sanitize(parent.text || `node${parent.id}`) : 'unknown';
-        toId = `${pName}_${_sanitize(toNode.text || `m${toNode.id}`)}`;
-      } else {
-        toId = `${_sanitize(toNode.text || `node${toNode.id}`)}_class`;
-      }
-      dot += `    "${fromId}" -> "${toId}" [style=dashed, arrowhead=none];\n`;
-    });
+  dot += '\n';
 
   // ── Inter-class relationships ──────────────────────────────
-  connectors
-    .filter(conn => conn.type !== 'member-link')
-    .forEach(conn => {
-      if (!conn.startNode || !conn.endNode) return;
+  connectors.forEach(conn => {
+    if (!conn.startNode || !conn.endNode) return;
+    const fromId = `${_sanitize(conn.startNode.text || `node${conn.startNode.id}`)}_class`;
+    const toId   = `${_sanitize(conn.endNode.text   || `node${conn.endNode.id}`)}_class`;
 
-      if (conn.type === 'extends' || conn.type === 'implements') {
-        const fromId = `${_sanitize(conn.startNode.text || `node${conn.startNode.id}`)}_class`;
-        const toId   = `${_sanitize(conn.endNode.text   || `node${conn.endNode.id}`)}_class`;
-        if (conn.type === 'extends') {
-          dot += `    "${fromId}" -> "${toId}" [arrowhead=empty, style=solid, label=extends];\n`;
-        } else {
-          dot += `    "${fromId}" -> "${toId}" [arrowhead=empty, style=dashed, label=implements];\n`;
-        }
-
-      } else if (conn.type === 'calls') {
-        function methodNodeId(node) {
-          const parent = classNodes.find(c => _containedIn(node, c));
-          const pName  = parent ? _sanitize(parent.text || `node${parent.id}`) : _sanitize(node.text || `node${node.id}`);
-          return `${pName}_${_sanitize(node.text || `m${node.id}`)}`;
-        }
-        const fromIsMethod = conn.startNode.type.startsWith('method-');
-        const toIsMethod   = conn.endNode.type.startsWith('method-');
-        const fromId = fromIsMethod ? methodNodeId(conn.startNode) : `${_sanitize(conn.startNode.text || `node${conn.startNode.id}`)}_class`;
-        const toId   = toIsMethod   ? methodNodeId(conn.endNode)   : `${_sanitize(conn.endNode.text   || `node${conn.endNode.id}`)}_class`;
-        dot += `    "${fromId}" -> "${toId}" [arrowhead=normal, style=solid, color=blue];\n`;
-      }
-    });
+    if (conn.type === 'extends') {
+      dot += `    "${fromId}" -> "${toId}" [arrowhead=empty, style=solid, label=extends];\n`;
+    } else if (conn.type === 'implements') {
+      dot += `    "${fromId}" -> "${toId}" [arrowhead=empty, style=dashed, label=implements];\n`;
+    } else if (conn.type === 'calls') {
+      const labelAttr = conn.label ? `, label="${conn.label.replace(/"/g, '\\"')}"` : '';
+      dot += `    "${fromId}" -> "${toId}" [arrowhead=normal, style=solid, color=blue${labelAttr}];\n`;
+    }
+  });
 
   dot += '}\n';
   return dot;
@@ -1114,6 +1262,7 @@ function updateDOTPreview() {
 function updatePropertyEditor() {
   const el = document.getElementById('propertyEditorContent');
   if (!el) return;
+
   if (selectedShapes.length > 0) {
     el.innerHTML = `<p class="text-muted"><small>${selectedShapes.length} shapes selected</small></p>
       <button class="btn btn-danger btn-sm w-100 mt-2" onclick="deleteSelectedGroup()">Delete Group</button>`;
@@ -1123,65 +1272,185 @@ function updatePropertyEditor() {
     el.innerHTML = '<p class="text-muted"><small>Select a shape to edit its properties</small></p>';
     return;
   }
+
   const s = selectedShape;
   let html = `<div class="mb-2"><span class="badge bg-secondary">${s.type}</span></div>`;
 
   if (s.type === 'class' || s.type === 'interface') {
-    html += propText('Name', s.text || '', 'text');
-    if (s.type === 'class') html += propCheck('Abstract', 'isAbstract', s.isAbstract);
+    // ── Name ──
+    html += `<div class="mb-2">
+      <label class="form-label form-label-sm fw-semibold">Name</label>
+      <input type="text" class="form-control form-control-sm"
+             value="${(s.text || '').replace(/"/g, '&quot;')}"
+             oninput="updateProp('text', this.value)">
+    </div>`;
 
-  } else if (s.type === 'class-header') {
-    html += propText('Label', s.text || '', 'text');
+    if (s.type === 'class') {
+      html += `<div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" id="cb_abstract"
+               ${s.isAbstract ? 'checked' : ''} onchange="updateProp('isAbstract', this.checked)">
+        <label class="form-check-label small" for="cb_abstract">Abstract</label>
+      </div>`;
+    }
 
-  } else if (s.type === 'field') {
-    html += propText('Field Name', s.text || '', 'text');
-    html += propText('Type', s.fieldType || '', 'fieldType', 'e.g. String, int');
-    html += propVis(s.visibility);
-    html += propCheck('static', 'isStatic', s.isStatic);
-    html += propCheck('final',  'isFinal',  s.isFinal);
+    // ── Methods ──
+    html += `<div class="mb-1 d-flex align-items-center">
+      <span class="fw-semibold small flex-grow-1">Methods</span>
+      <button class="btn btn-outline-primary btn-sm py-0 px-1" style="font-size:11px;" onclick="addMethod()">+ Add</button>
+    </div>`;
 
-  } else if (s.type.startsWith('method-')) {
-    html += propText('Method Name', s.text || '', 'text');
-    html += propText('Return Type', s.returnType || 'void', 'returnType', 'e.g. void, String');
-    html += propText('Parameters', s.params || '', 'params', 'e.g. String name, int age');
-    html += propCheck('static',   'isStatic',   s.isStatic);
-    html += propCheck('abstract', 'isAbstract', s.isAbstract);
+    s.methods.forEach((m, i) => {
+      const visOpts = ['public','private','protected']
+        .map(v => `<option value="${v}" ${m.visibility===v?'selected':''}>${v}</option>`).join('');
+      html += `<div class="border rounded p-1 mb-1" style="font-size:11px;background:#f8f9fa;">
+        <div class="d-flex gap-1 mb-1 align-items-center">
+          <select class="form-select form-select-sm py-0" style="width:86px;font-size:11px;"
+                  onchange="updateMethod(${i},'visibility',this.value)">${visOpts}</select>
+          <input type="text" class="form-control form-control-sm py-0" style="font-size:11px;" placeholder="name"
+                 value="${(m.name||'').replace(/"/g,'&quot;')}"
+                 oninput="updateMethod(${i},'name',this.value)">
+          <button class="btn btn-danger btn-sm py-0 px-1" style="font-size:11px;" onclick="removeMethod(${i})">✕</button>
+        </div>
+        <div class="d-flex gap-1 mb-1">
+          <input type="text" class="form-control form-control-sm py-0" style="font-size:11px;flex:2;" placeholder="params"
+                 value="${(m.params||'').replace(/"/g,'&quot;')}"
+                 oninput="updateMethod(${i},'params',this.value)">
+          <input type="text" class="form-control form-control-sm py-0" style="font-size:11px;flex:1;" placeholder="return"
+                 value="${(m.returnType||'void').replace(/"/g,'&quot;')}"
+                 oninput="updateMethod(${i},'returnType',this.value)">
+        </div>
+        <div class="d-flex gap-2">
+          <div class="form-check form-check-inline mb-0">
+            <input class="form-check-input" type="checkbox" id="ms${i}" ${m.isStatic?'checked':''}
+                   onchange="updateMethod(${i},'isStatic',this.checked)">
+            <label class="form-check-label" style="font-size:11px;" for="ms${i}">static</label>
+          </div>
+          <div class="form-check form-check-inline mb-0">
+            <input class="form-check-input" type="checkbox" id="ma${i}" ${m.isAbstract?'checked':''}
+                   onchange="updateMethod(${i},'isAbstract',this.checked)">
+            <label class="form-check-label" style="font-size:11px;" for="ma${i}">abstract</label>
+          </div>
+        </div>
+      </div>`;
+    });
+
+    // ── Variables ──
+    html += `<div class="mb-1 d-flex align-items-center mt-2">
+      <span class="fw-semibold small flex-grow-1">Variables</span>
+      <button class="btn btn-outline-primary btn-sm py-0 px-1" style="font-size:11px;" onclick="addField()">+ Add</button>
+    </div>`;
+
+    s.fields.forEach((f, i) => {
+      const visOpts = ['public','private','protected']
+        .map(v => `<option value="${v}" ${f.visibility===v?'selected':''}>${v}</option>`).join('');
+      html += `<div class="border rounded p-1 mb-1" style="font-size:11px;background:#ffffe0;">
+        <div class="d-flex gap-1 mb-1 align-items-center">
+          <select class="form-select form-select-sm py-0" style="width:86px;font-size:11px;"
+                  onchange="updateField(${i},'visibility',this.value)">${visOpts}</select>
+          <input type="text" class="form-control form-control-sm py-0" style="font-size:11px;flex:1;" placeholder="type"
+                 value="${(f.fieldType||'').replace(/"/g,'&quot;')}"
+                 oninput="updateField(${i},'fieldType',this.value)">
+          <input type="text" class="form-control form-control-sm py-0" style="font-size:11px;flex:1;" placeholder="name"
+                 value="${(f.name||'').replace(/"/g,'&quot;')}"
+                 oninput="updateField(${i},'name',this.value)">
+          <button class="btn btn-danger btn-sm py-0 px-1" style="font-size:11px;" onclick="removeField(${i})">✕</button>
+        </div>
+        <div class="d-flex gap-2">
+          <div class="form-check form-check-inline mb-0">
+            <input class="form-check-input" type="checkbox" id="fs${i}" ${f.isStatic?'checked':''}
+                   onchange="updateField(${i},'isStatic',this.checked)">
+            <label class="form-check-label" style="font-size:11px;" for="fs${i}">static</label>
+          </div>
+          <div class="form-check form-check-inline mb-0">
+            <input class="form-check-input" type="checkbox" id="ff${i}" ${f.isFinal?'checked':''}
+                   onchange="updateField(${i},'isFinal',this.checked)">
+            <label class="form-check-label" style="font-size:11px;" for="ff${i}">final</label>
+          </div>
+        </div>
+      </div>`;
+    });
 
   } else if (isConnectorShape(s.type)) {
-    const desc = s.type === 'extends'     ? 'Solid line → hollow arrowhead'
-               : s.type === 'implements'  ? 'Dashed line → hollow arrowhead'
-               : s.type === 'member-link' ? 'Dashed line, no arrowhead (class header → member)'
-               : 'Solid blue line → filled arrowhead';
-    html += `<p class="text-muted small mb-1">${desc}</p>`;
+    if (s.type === 'calls') {
+      html += `<p class="text-muted small mb-2">Blue solid arrow — pointer / method call</p>
+      <div class="mb-2">
+        <label class="form-label form-label-sm fw-semibold">Label <small class="text-muted">(e.g. main -&gt; add)</small></label>
+        <input type="text" class="form-control form-control-sm"
+               placeholder="e.g. main -> add"
+               value="${(s.label||'').replace(/"/g,'&quot;')}"
+               oninput="updateProp('label', this.value)">
+      </div>`;
+    } else {
+      const desc = s.type === 'extends'    ? 'Solid line → hollow arrowhead (inheritance)'
+                 : 'Dashed line → hollow arrowhead (interface implementation)';
+      html += `<p class="text-muted small mb-2">${desc}</p>`;
+    }
+    html += `<div class="form-check mb-1">
+      <input class="form-check-input" type="checkbox" id="cb_curved"
+             ${s.curved ? 'checked' : ''} onchange="updateProp('curved', this.checked)">
+      <label class="form-check-label small" for="cb_curved">Curved</label>
+    </div>
+    <div class="mb-2">
+      <label class="form-label form-label-sm">Curve offset <small class="text-muted">(0 = auto)</small></label>
+      <input type="range" class="form-range" min="-200" max="200" step="10"
+             value="${s.curveOffset}"
+             oninput="updateProp('curveOffset', +this.value)">
+    </div>`;
   }
 
   html += `<button class="btn btn-danger btn-sm w-100 mt-2" onclick="deleteSelectedShape()">Delete</button>`;
   el.innerHTML = html;
 }
 
-function propText(label, value, prop, placeholder = '') {
-  return `<div class="mb-2">
-    <label class="form-label form-label-sm fw-semibold">${label}</label>
-    <input type="text" class="form-control form-control-sm" placeholder="${placeholder}"
-           value="${value.replace(/"/g, '&quot;')}"
-           oninput="updateProp('${prop}', this.value)">
-  </div>`;
+// ── Method / Field management ─────────────────────────────────
+function addMethod() {
+  if (!selectedShape) return;
+  selectedShape.methods.push({ visibility: 'public', isStatic: false, isAbstract: false, name: 'method', params: '', returnType: 'void' });
+  selectedShape.autoResizeForContent();
+  updatePropertyEditor();
+  redraw();
+  updateDOTPreview();
 }
-function propVis(current) {
-  const opts = ['public', 'private', 'protected', 'package']
-    .map(v => `<option value="${v}" ${current === v ? 'selected' : ''}>${v}</option>`)
-    .join('');
-  return `<div class="mb-2">
-    <label class="form-label form-label-sm fw-semibold">Visibility</label>
-    <select class="form-select form-select-sm" onchange="updateProp('visibility', this.value)">${opts}</select>
-  </div>`;
+
+function removeMethod(i) {
+  if (!selectedShape) return;
+  selectedShape.methods.splice(i, 1);
+  selectedShape.autoResizeForContent();
+  updatePropertyEditor();
+  redraw();
+  updateDOTPreview();
 }
-function propCheck(label, prop, checked) {
-  return `<div class="form-check mb-1">
-    <input class="form-check-input" type="checkbox" id="cb_${prop}"
-           ${checked ? 'checked' : ''} onchange="updateProp('${prop}', this.checked)">
-    <label class="form-check-label" for="cb_${prop}">${label}</label>
-  </div>`;
+
+function updateMethod(i, prop, value) {
+  if (!selectedShape) return;
+  selectedShape.methods[i][prop] = value;
+  redraw();
+  updateDOTPreview();
+}
+
+function addField() {
+  if (!selectedShape) return;
+  selectedShape.fields.push({ visibility: 'private', isStatic: false, isFinal: false, fieldType: '', name: 'field' });
+  selectedShape.autoResizeForContent();
+  updatePropertyEditor();
+  redraw();
+  updateDOTPreview();
+}
+
+function removeField(i) {
+  if (!selectedShape) return;
+  selectedShape.fields.splice(i, 1);
+  selectedShape.autoResizeForContent();
+  updatePropertyEditor();
+  redraw();
+  updateDOTPreview();
+}
+
+function updateField(i, prop, value) {
+  if (!selectedShape) return;
+  selectedShape.fields[i][prop] = value;
+  redraw();
+  updateDOTPreview();
 }
 
 function updateProp(prop, value) {
@@ -1289,41 +1558,14 @@ window.getCurrentDiagram = function () {
   const classNodes = shapes.filter(s => s.type === 'class' || s.type === 'interface');
   const connectors = shapes.filter(s => isConnectorShape(s.type));
 
-    const classes = classNodes.map(cls => {
-    const containedMethods = shapes
-      .filter(s => s.type.startsWith('method-') && _containedIn(s, cls));
-
-    const linkedMethods = shapes
-      .filter(s => isConnectorShape(s.type)
-               && s.startNode === cls
-               && s.endNode
-               && s.endNode.type.startsWith('method-'))
-      .map(s => s.endNode);
-
-    const allMethodShapes = [...new Map(
-      [...containedMethods, ...linkedMethods].map(m => [m.id, m])
-    ).values()];
-
-    const methods = allMethodShapes.map(m => ({
-      name: m.text || '',
-    }));
-
-    const fields = shapes
-      .filter(s => s.type === 'field' && _containedIn(s, cls))
-      .map(f => ({
-        name: f.text || '',
-      }));
-
-    return {
-      name: cls.text || `node${cls.id}`,
-      methods,
-      fields,
-    };
-  });
+  const classes = classNodes.map(cls => ({
+    name:    cls.text || `node${cls.id}`,
+    methods: cls.methods.map(m => ({ name: m.name || '' })),
+    fields:  cls.fields.map(f  => ({ name: f.name  || '' })),
+  }));
 
   const relationships = connectors
     .filter(c => c.startNode && c.endNode)
-    .filter(c => !c.endNode.type.startsWith('method-') && c.endNode.type !== 'field')
     .map(c => ({
       from: c.startNode.text || `node${c.startNode.id}`,
       to:   c.endNode.text   || `node${c.endNode.id}`,
