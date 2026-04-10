@@ -867,3 +867,236 @@ mod property_based_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod control_flow_tests {
+    use crate::{
+        analyzer::JavaAnalyzer,
+        execution_flow::{ExecutionAction, ExecutionAnalyzer, ExecutionFlow},
+        parser::JavaParser,
+    };
+
+    fn analyze_flow(code: &str) -> ExecutionFlow {
+        let mut parser = JavaParser::new().unwrap();
+        let tree = parser.parse(code).unwrap();
+        let root = parser.get_root_node(&tree);
+        let mut analyzer = JavaAnalyzer::new();
+        let analysis = analyzer.analyze(&root, code);
+        let mut exec = ExecutionAnalyzer::new(analysis);
+        exec.analyze_execution_flow(&root, code)
+    }
+
+    fn has_action(flow: &ExecutionFlow, pred: impl Fn(&ExecutionAction) -> bool) -> bool {
+        flow.steps.iter().any(|s| pred(&s.action))
+    }
+
+    fn count_actions(flow: &ExecutionFlow, pred: impl Fn(&ExecutionAction) -> bool) -> usize {
+        flow.steps.iter().filter(|s| pred(&s.action)).count()
+    }
+
+    fn wrap_main(body: &str) -> String {
+        format!(
+            "public class Main {{ public static void main(String[] args) {{ {} }} }}",
+            body
+        )
+    }
+
+    // ── If/Else Tests ──
+
+    #[test]
+    fn if_takes_true_branch_when_condition_true() {
+        let code = wrap_main("int x = 10; if (x > 5) { int y = 1; } else { int y = 2; }");
+        let flow = analyze_flow(&code);
+        assert!(
+            has_action(
+                &flow,
+                |a| matches!(a, ExecutionAction::VariableAssignment { variable_name, value, .. } if variable_name == "y" && value == "1")
+            ),
+            "expected y=1 (true branch) to be present"
+        );
+        assert!(
+            !has_action(
+                &flow,
+                |a| matches!(a, ExecutionAction::VariableAssignment { variable_name, value, .. } if variable_name == "y" && value == "2")
+            ),
+            "expected y=2 (false branch) to be absent"
+        );
+    }
+
+    #[test]
+    fn if_takes_false_branch_when_condition_false() {
+        let code = wrap_main("int x = 2; if (x > 5) { int y = 1; } else { int y = 2; }");
+        let flow = analyze_flow(&code);
+        assert!(
+            has_action(
+                &flow,
+                |a| matches!(a, ExecutionAction::VariableAssignment { variable_name, value, .. } if variable_name == "y" && value == "2")
+            ),
+            "expected y=2 (false branch) to be present"
+        );
+        assert!(
+            !has_action(
+                &flow,
+                |a| matches!(a, ExecutionAction::VariableAssignment { variable_name, value, .. } if variable_name == "y" && value == "1")
+            ),
+            "expected y=1 (true branch) to be absent"
+        );
+    }
+
+    #[test]
+    fn if_without_else_skips_body_when_false() {
+        let code = wrap_main("int x = 2; if (x > 5) { int y = 1; } int z = 99;");
+        let flow = analyze_flow(&code);
+        assert!(
+            !has_action(
+                &flow,
+                |a| matches!(a, ExecutionAction::VariableAssignment { variable_name, .. } if variable_name == "y")
+            ),
+            "expected y assignment to be absent when condition is false"
+        );
+        assert!(
+            has_action(
+                &flow,
+                |a| matches!(a, ExecutionAction::VariableAssignment { variable_name, value, .. } if variable_name == "z" && value == "99")
+            ),
+            "expected z=99 to be present after skipped if"
+        );
+    }
+
+    #[test]
+    fn if_reports_correct_branch_taken_value() {
+        let code = wrap_main("int x = 10; if (x > 5) { int y = 1; }");
+        let flow = analyze_flow(&code);
+        assert!(
+            has_action(&flow, |a| matches!(
+                a,
+                ExecutionAction::ConditionalBranch {
+                    branch_taken: true,
+                    ..
+                }
+            )),
+            "expected ConditionalBranch with branch_taken: true"
+        );
+    }
+
+    #[test]
+    fn if_reports_false_branch_taken() {
+        let code = wrap_main("int x = 2; if (x > 5) { int y = 1; }");
+        let flow = analyze_flow(&code);
+        assert!(
+            has_action(&flow, |a| matches!(
+                a,
+                ExecutionAction::ConditionalBranch {
+                    branch_taken: false,
+                    ..
+                }
+            )),
+            "expected ConditionalBranch with branch_taken: false"
+        );
+    }
+
+    // ── While Loop Tests ──
+
+    #[test]
+    fn while_loop_iterates_correct_count() {
+        let code = wrap_main("int x = 3; while (x > 0) { x = x - 1; }");
+        let flow = analyze_flow(&code);
+        let count = count_actions(&flow, |a| {
+            matches!(a, ExecutionAction::LoopIteration { .. })
+        });
+        assert_eq!(
+            count, 3,
+            "expected exactly 3 loop iterations for x counting down from 3"
+        );
+    }
+
+    #[test]
+    fn while_loop_zero_iterations_when_false() {
+        let code = wrap_main("int x = 0; while (x > 5) { x = x - 1; }");
+        let flow = analyze_flow(&code);
+        let count = count_actions(&flow, |a| {
+            matches!(a, ExecutionAction::LoopIteration { .. })
+        });
+        assert_eq!(
+            count, 0,
+            "expected 0 loop iterations when condition is initially false"
+        );
+    }
+
+    // ── Do-While Tests ──
+
+    #[test]
+    fn do_while_executes_body_then_checks() {
+        let code = wrap_main("int x = 0; do { x = x + 1; } while (x < 3);");
+        let flow = analyze_flow(&code);
+        let count = count_actions(&flow, |a| {
+            matches!(a, ExecutionAction::LoopIteration { .. })
+        });
+        assert_eq!(
+            count, 3,
+            "expected 3 do-while iterations for x counting up to 3"
+        );
+    }
+
+    #[test]
+    fn do_while_executes_once_when_condition_immediately_false() {
+        let code = wrap_main("int x = 10; do { x = x + 1; } while (x < 3);");
+        let flow = analyze_flow(&code);
+        let count = count_actions(&flow, |a| {
+            matches!(a, ExecutionAction::LoopIteration { .. })
+        });
+        assert_eq!(
+            count, 1,
+            "expected 1 do-while iteration even when condition is immediately false"
+        );
+    }
+
+    // ── Local Variable Tracking Tests ──
+
+    #[test]
+    fn local_variable_updated_by_reassignment() {
+        let code = wrap_main("int x = 5; x = 10; if (x > 7) { int y = 1; } else { int y = 2; }");
+        let flow = analyze_flow(&code);
+        assert!(
+            has_action(
+                &flow,
+                |a| matches!(a, ExecutionAction::VariableAssignment { variable_name, value, .. } if variable_name == "y" && value == "1")
+            ),
+            "expected y=1 (true branch) because x was reassigned to 10"
+        );
+        assert!(
+            !has_action(
+                &flow,
+                |a| matches!(a, ExecutionAction::VariableAssignment { variable_name, value, .. } if variable_name == "y" && value == "2")
+            ),
+            "expected y=2 (false branch) to be absent"
+        );
+    }
+
+    // ── Break Tests ──
+
+    #[test]
+    fn break_exits_while_loop() {
+        let code = wrap_main("int x = 0; while (x < 100) { if (x == 3) { break; } x = x + 1; }");
+        let flow = analyze_flow(&code);
+        let count = count_actions(&flow, |a| {
+            matches!(a, ExecutionAction::LoopIteration { .. })
+        });
+        assert_eq!(
+            count, 4,
+            "expected 4 loop iterations (x=0,1,2,3 then break)"
+        );
+    }
+
+    // ── For Loop Tests ──
+
+    #[test]
+    fn for_loop_evaluates_condition_each_iteration() {
+        let code = wrap_main("int sum = 0; for (int i = 0; i < 4; i++) { sum = sum + i; }");
+        let flow = analyze_flow(&code);
+        let count = count_actions(&flow, |a| {
+            matches!(a, ExecutionAction::LoopIteration { .. })
+        });
+        assert_eq!(count, 4, "expected exactly 4 for-loop iterations");
+    }
+}

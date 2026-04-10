@@ -53,7 +53,7 @@ impl JavaAnalyzer {
     /// let java_code = include_str!("../examples/Main.java");
     /// let mut parser = JavaParser::new().expect("unable to create parser");
     /// let tree = parser.parse(java_code).expect("unable to create tree");
-    /// 
+    ///
     /// let root_node = parser.get_root_node(&tree);
     /// let mut analyzer = JavaAnalyzer::new();
     /// let static_analysis = analyzer.analyze(&root_node, java_code);

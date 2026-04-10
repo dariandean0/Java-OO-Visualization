@@ -1,7 +1,10 @@
+use super::evaluator::{FlowSignal, Value};
 use crate::{analyzer::AnalysisResult, parser::node_text};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tree_sitter::Node;
+
+const MAX_LOOP_ITERATIONS: usize = 100;
 
 /// Maps (class_name, method_name) -> (start_byte, end_byte) of the method body in source
 pub type MethodBodyMap = HashMap<(String, String), (usize, usize)>;
@@ -95,6 +98,7 @@ pub struct ExecutionAnalyzer {
     current_class: Option<String>,
     param_values: HashMap<String, String>,
     local_variables: HashMap<String, String>,
+    flow_signal: Option<FlowSignal>,
 }
 
 impl ExecutionAnalyzer {
@@ -116,6 +120,7 @@ impl ExecutionAnalyzer {
             current_class: None,
             param_values: HashMap::new(),
             local_variables: HashMap::new(),
+            flow_signal: None,
         }
     }
 
@@ -193,6 +198,9 @@ impl ExecutionAnalyzer {
 
         for child in block_node.named_children(&mut cursor) {
             self.analyze_statement(&child, source, root_node);
+            if self.flow_signal.is_some() {
+                break;
+            }
         }
     }
 
@@ -231,6 +239,15 @@ impl ExecutionAnalyzer {
                     root_node,
                 );
             }
+            "do_statement" => {
+                self.analyze_do_while_statement(
+                    stmt_node,
+                    source,
+                    line_number,
+                    &source_line,
+                    root_node,
+                );
+            }
             "return_statement" => {
                 self.analyze_return_statement(
                     stmt_node,
@@ -242,6 +259,12 @@ impl ExecutionAnalyzer {
             }
             "block" => {
                 self.analyze_block(stmt_node, source, root_node);
+            }
+            "break_statement" => {
+                self.flow_signal = Some(FlowSignal::Break);
+            }
+            "continue_statement" => {
+                self.flow_signal = Some(FlowSignal::Continue);
             }
             _ => {
                 // Handle other statement types
@@ -692,7 +715,20 @@ impl ExecutionAnalyzer {
             }
 
             value = node_text(&right, source).to_string();
+
+            // Evaluate the RHS expression and track the local variable
+            let evaluated = self.evaluate_expression(&right, source);
+            if evaluated.is_known() {
+                self.local_variables
+                    .insert(variable_name.clone(), evaluated.to_storage_string());
+            }
         }
+
+        let display_value = self
+            .local_variables
+            .get(&variable_name)
+            .cloned()
+            .unwrap_or_else(|| value.clone());
 
         self.add_execution_step(
             line_number,
@@ -700,7 +736,7 @@ impl ExecutionAnalyzer {
             ExecutionAction::VariableAssignment {
                 variable_name: variable_name.clone(),
                 value_type: "assigned".to_string(),
-                value,
+                value: display_value,
             },
             format!("Assign value to: {}", variable_name),
         );
@@ -775,25 +811,38 @@ impl ExecutionAnalyzer {
         root_node: &Node,
     ) {
         let mut condition = String::new();
+        let mut branch_taken = true; // default: take true branch if we can't evaluate
 
         if let Some(condition_node) = if_node.child_by_field_name("condition") {
             condition = node_text(&condition_node, source).to_string();
+            // Evaluate the condition expression (unwrap parenthesized_expression)
+            let eval_node = if condition_node.kind() == "parenthesized_expression" {
+                condition_node.child(1).unwrap_or(condition_node)
+            } else {
+                condition_node
+            };
+            let value = self.evaluate_expression(&eval_node, source);
+            if let Some(b) = value.as_bool() {
+                branch_taken = b;
+            }
         }
 
-        // For simplicity, assume we take the true branch
         self.add_execution_step(
             line_number,
             source_line,
             ExecutionAction::ConditionalBranch {
                 condition: condition.clone(),
-                branch_taken: true,
+                branch_taken,
             },
-            format!("Evaluate condition: {}", condition),
+            format!("Evaluate condition: {} = {}", condition, branch_taken),
         );
 
-        // Analyze the consequence (if body)
-        if let Some(consequence) = if_node.child_by_field_name("consequence") {
-            self.analyze_statement(&consequence, source, root_node);
+        if branch_taken {
+            if let Some(consequence) = if_node.child_by_field_name("consequence") {
+                self.analyze_statement(&consequence, source, root_node);
+            }
+        } else if let Some(alternative) = if_node.child_by_field_name("alternative") {
+            self.analyze_statement(&alternative, source, root_node);
         }
     }
 
@@ -806,50 +855,289 @@ impl ExecutionAnalyzer {
         root_node: &Node,
     ) {
         let loop_type = loop_node.kind().to_string();
-        let mut condition = String::new();
 
-        // Extract condition based on loop type
-        if let Some(condition_node) = loop_node.child_by_field_name("condition") {
-            condition = node_text(&condition_node, source).to_string();
-        }
-
-        if loop_node.kind() == "for_statement" {
-            if let Some(iterations) = self.evaluate_for_loop_iterations(loop_node, source) {
-                let iterations = iterations.min(100);
-                for i in 0..iterations {
-                    self.add_execution_step(
-                        line_number,
-                        source_line,
-                        ExecutionAction::LoopIteration {
-                            loop_type: loop_type.clone(),
-                            condition: condition.clone(),
-                            iteration: i + 1,
-                        },
-                        format!("Loop iteration {} of {}", i + 1, iterations),
-                    );
-
-                    if let Some(body) = loop_node.child_by_field_name("body") {
-                        self.analyze_statement(&body, source, root_node);
-                    }
+        match loop_node.kind() {
+            "for_statement" => {
+                self.analyze_for_statement(loop_node, source, line_number, source_line, root_node);
+            }
+            "while_statement" => {
+                self.analyze_while_statement(
+                    loop_node,
+                    source,
+                    line_number,
+                    source_line,
+                    root_node,
+                );
+            }
+            "enhanced_for_statement" => {
+                // Enhanced for-each: we can't know the collection size, run body once
+                let mut condition = String::new();
+                if let Some(condition_node) = loop_node.child_by_field_name("value") {
+                    condition = node_text(&condition_node, source).to_string();
                 }
-                return;
+                self.add_execution_step(
+                    line_number,
+                    source_line,
+                    ExecutionAction::LoopIteration {
+                        loop_type,
+                        condition: condition.clone(),
+                        iteration: 1,
+                    },
+                    format!("Enter for-each loop over: {}", condition),
+                );
+                if let Some(body) = loop_node.child_by_field_name("body") {
+                    self.analyze_statement(&body, source, root_node);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn analyze_while_statement(
+        &mut self,
+        loop_node: &Node,
+        source: &str,
+        line_number: usize,
+        source_line: &str,
+        root_node: &Node,
+    ) {
+        let condition_node = loop_node.child_by_field_name("condition");
+        let condition_text = condition_node
+            .map(|n| node_text(&n, source).to_string())
+            .unwrap_or_default();
+
+        let mut iteration = 0;
+        loop {
+            if iteration >= MAX_LOOP_ITERATIONS {
+                break;
+            }
+
+            // Evaluate condition
+            let cond_val = condition_node.and_then(|n| {
+                let inner = if n.kind() == "parenthesized_expression" {
+                    n.child(1).unwrap_or(n)
+                } else {
+                    n
+                };
+                self.evaluate_expression(&inner, source).as_bool()
+            });
+
+            match cond_val {
+                Some(false) => break,
+                Some(true) => {}
+                None => {
+                    // Can't evaluate: run body once (fallback)
+                    if iteration == 0 {
+                        self.add_execution_step(
+                            line_number,
+                            source_line,
+                            ExecutionAction::LoopIteration {
+                                loop_type: "while_statement".to_string(),
+                                condition: condition_text.clone(),
+                                iteration: 1,
+                            },
+                            format!("Enter loop with condition: {}", condition_text),
+                        );
+                        if let Some(body) = loop_node.child_by_field_name("body") {
+                            self.analyze_statement(&body, source, root_node);
+                        }
+                    }
+                    break;
+                }
+            }
+
+            iteration += 1;
+            self.add_execution_step(
+                line_number,
+                source_line,
+                ExecutionAction::LoopIteration {
+                    loop_type: "while_statement".to_string(),
+                    condition: condition_text.clone(),
+                    iteration,
+                },
+                format!("Loop iteration {}", iteration),
+            );
+
+            if let Some(body) = loop_node.child_by_field_name("body") {
+                self.analyze_statement(&body, source, root_node);
+            }
+
+            // Check flow signal after body
+            match self.flow_signal.take() {
+                Some(FlowSignal::Break) => break,
+                Some(FlowSignal::Continue) => continue,
+                None => {}
+            }
+        }
+    }
+
+    fn analyze_do_while_statement(
+        &mut self,
+        do_node: &Node,
+        source: &str,
+        line_number: usize,
+        source_line: &str,
+        root_node: &Node,
+    ) {
+        let condition_node = do_node.child_by_field_name("condition");
+        let condition_text = condition_node
+            .map(|n| node_text(&n, source).to_string())
+            .unwrap_or_default();
+
+        let mut iteration = 0;
+        loop {
+            if iteration >= MAX_LOOP_ITERATIONS {
+                break;
+            }
+            iteration += 1;
+
+            self.add_execution_step(
+                line_number,
+                source_line,
+                ExecutionAction::LoopIteration {
+                    loop_type: "do_statement".to_string(),
+                    condition: condition_text.clone(),
+                    iteration,
+                },
+                format!("Do-while iteration {}", iteration),
+            );
+
+            if let Some(body) = do_node.child_by_field_name("body") {
+                self.analyze_statement(&body, source, root_node);
+            }
+
+            // Check flow signal after body
+            match self.flow_signal.take() {
+                Some(FlowSignal::Break) => break,
+                Some(FlowSignal::Continue) => {} // continue to condition check
+                None => {}
+            }
+
+            // Evaluate condition after body execution
+            let cond_val = condition_node.and_then(|n| {
+                let inner = if n.kind() == "parenthesized_expression" {
+                    n.child(1).unwrap_or(n)
+                } else {
+                    n
+                };
+                self.evaluate_expression(&inner, source).as_bool()
+            });
+
+            match cond_val {
+                Some(false) => break,
+                Some(true) => {}
+                None => break, // can't evaluate: stop after one iteration
+            }
+        }
+    }
+
+    fn analyze_for_statement(
+        &mut self,
+        for_node: &Node,
+        source: &str,
+        line_number: usize,
+        source_line: &str,
+        root_node: &Node,
+    ) {
+        // Execute init clause
+        if let Some(init_node) = for_node.child_by_field_name("init") {
+            if init_node.kind() == "local_variable_declaration" {
+                let init_line = init_node.start_position().row + 1;
+                let init_source = self.get_source_line(init_line);
+                self.analyze_variable_declaration(
+                    &init_node,
+                    source,
+                    init_line,
+                    &init_source,
+                    root_node,
+                );
             }
         }
 
-        self.add_execution_step(
-            line_number,
-            source_line,
-            ExecutionAction::LoopIteration {
-                loop_type,
-                condition: condition.clone(),
-                iteration: 1,
-            },
-            format!("Enter loop with condition: {}", condition),
-        );
+        let condition_node = for_node.child_by_field_name("condition");
+        let condition_text = condition_node
+            .map(|n| node_text(&n, source).to_string())
+            .unwrap_or_default();
 
-        // Analyze loop body
-        if let Some(body) = loop_node.child_by_field_name("body") {
-            self.analyze_statement(&body, source, root_node);
+        let mut iteration = 0;
+        loop {
+            if iteration >= MAX_LOOP_ITERATIONS {
+                break;
+            }
+
+            // Evaluate condition
+            let cond_val =
+                condition_node.and_then(|n| self.evaluate_expression(&n, source).as_bool());
+
+            match cond_val {
+                Some(false) => break,
+                Some(true) => {}
+                None => {
+                    // Fall back to static analysis
+                    if let Some(iters) = self.evaluate_for_loop_iterations(for_node, source) {
+                        let iters = iters.min(MAX_LOOP_ITERATIONS);
+                        for i in 0..iters {
+                            self.add_execution_step(
+                                line_number,
+                                source_line,
+                                ExecutionAction::LoopIteration {
+                                    loop_type: "for_statement".to_string(),
+                                    condition: condition_text.clone(),
+                                    iteration: i + 1,
+                                },
+                                format!("Loop iteration {} of {}", i + 1, iters),
+                            );
+                            if let Some(body) = for_node.child_by_field_name("body") {
+                                self.analyze_statement(&body, source, root_node);
+                            }
+                        }
+                    } else {
+                        // Can't determine iterations; run body once
+                        self.add_execution_step(
+                            line_number,
+                            source_line,
+                            ExecutionAction::LoopIteration {
+                                loop_type: "for_statement".to_string(),
+                                condition: condition_text.clone(),
+                                iteration: 1,
+                            },
+                            format!("Enter for loop with condition: {}", condition_text),
+                        );
+                        if let Some(body) = for_node.child_by_field_name("body") {
+                            self.analyze_statement(&body, source, root_node);
+                        }
+                    }
+                    return;
+                }
+            }
+
+            iteration += 1;
+            self.add_execution_step(
+                line_number,
+                source_line,
+                ExecutionAction::LoopIteration {
+                    loop_type: "for_statement".to_string(),
+                    condition: condition_text.clone(),
+                    iteration,
+                },
+                format!("Loop iteration {}", iteration),
+            );
+
+            if let Some(body) = for_node.child_by_field_name("body") {
+                self.analyze_statement(&body, source, root_node);
+            }
+
+            // Check flow signal
+            match self.flow_signal.take() {
+                Some(FlowSignal::Break) => break,
+                Some(FlowSignal::Continue) => {}
+                None => {}
+            }
+
+            // Execute update clause (i++, i--, i+=1, etc.)
+            if let Some(update_node) = for_node.child_by_field_name("update") {
+                self.execute_update_expression(&update_node, source);
+            }
         }
     }
 
@@ -1183,6 +1471,207 @@ impl ExecutionAnalyzer {
         self.method_bodies
             .get(&(class_name.to_string(), method_name.to_string()))
             .copied()
+    }
+
+    /// Evaluate a tree-sitter expression node to a Value.
+    /// This is a read-only operation: it does not mutate variable state.
+    fn evaluate_expression(&self, node: &Node, source: &str) -> Value {
+        match node.kind() {
+            "decimal_integer_literal" => {
+                let text = node_text(node, source);
+                text.parse::<i64>()
+                    .map(Value::Int)
+                    .unwrap_or(Value::Unknown)
+            }
+            "hex_integer_literal" | "octal_integer_literal" | "binary_integer_literal" => {
+                let text = node_text(node, source);
+                // Strip prefix (0x, 0, 0b) and parse
+                let stripped = text
+                    .trim_start_matches("0x")
+                    .trim_start_matches("0X")
+                    .trim_start_matches("0b")
+                    .trim_start_matches("0B");
+                i64::from_str_radix(
+                    stripped,
+                    match node.kind() {
+                        "hex_integer_literal" => 16,
+                        "octal_integer_literal" => 8,
+                        "binary_integer_literal" => 2,
+                        _ => 10,
+                    },
+                )
+                .map(Value::Int)
+                .unwrap_or(Value::Unknown)
+            }
+            "decimal_floating_point_literal" | "hex_floating_point_literal" => {
+                let text = node_text(node, source);
+                // Strip trailing f/F/d/D
+                let cleaned = text.trim_end_matches(['f', 'F', 'd', 'D']);
+                cleaned
+                    .parse::<f64>()
+                    .map(Value::Float)
+                    .unwrap_or(Value::Unknown)
+            }
+            "true" => Value::Bool(true),
+            "false" => Value::Bool(false),
+            "null_literal" => Value::Null,
+            "string_literal" => {
+                let text = node_text(node, source);
+                // Strip surrounding quotes
+                let inner = text.trim_start_matches('"').trim_end_matches('"');
+                Value::Str(inner.to_string())
+            }
+            "character_literal" => {
+                let text = node_text(node, source);
+                let inner = text.trim_start_matches('\'').trim_end_matches('\'');
+                inner
+                    .chars()
+                    .next()
+                    .map(|c| Value::Int(c as i64))
+                    .unwrap_or(Value::Unknown)
+            }
+            "identifier" => {
+                let name = node_text(node, source);
+                self.resolve_variable_value(name)
+            }
+            "parenthesized_expression" => {
+                // Unwrap parentheses and evaluate inner expression
+                if let Some(inner) = node.child(1) {
+                    self.evaluate_expression(&inner, source)
+                } else {
+                    Value::Unknown
+                }
+            }
+            "binary_expression" => {
+                let left_node = node.child_by_field_name("left");
+                let right_node = node.child_by_field_name("right");
+                // Operator is unnamed child at index 1
+                let op_node = node.child(1);
+
+                match (left_node, op_node, right_node) {
+                    (Some(l), Some(op), Some(r)) => {
+                        let left = self.evaluate_expression(&l, source);
+                        let op_text = node_text(&op, source);
+                        let right = self.evaluate_expression(&r, source);
+                        match op_text {
+                            "+" => left.add(&right),
+                            "-" => left.sub(&right),
+                            "*" => left.mul(&right),
+                            "/" => left.div(&right),
+                            "%" => left.rem(&right),
+                            "<" => left.lt(&right),
+                            "<=" => left.le(&right),
+                            ">" => left.gt(&right),
+                            ">=" => left.ge(&right),
+                            "==" => left.eq_val(&right),
+                            "!=" => left.ne_val(&right),
+                            "&&" => left.and(&right),
+                            "||" => left.or(&right),
+                            _ => Value::Unknown,
+                        }
+                    }
+                    _ => Value::Unknown,
+                }
+            }
+            "unary_expression" => {
+                // e.g., !condition, -value
+                let mut cursor = node.walk();
+                let children: Vec<_> = node.children(&mut cursor).collect();
+                if children.len() >= 2 {
+                    let op_text = node_text(&children[0], source);
+                    let operand = self.evaluate_expression(&children[1], source);
+                    match op_text {
+                        "!" => operand.not(),
+                        "-" => operand.negate(),
+                        "+" => operand,
+                        _ => Value::Unknown,
+                    }
+                } else {
+                    Value::Unknown
+                }
+            }
+            "field_access" => {
+                // Handle this.field
+                if let Some(object) = node.child_by_field_name("object")
+                    && let Some(field) = node.child_by_field_name("field")
+                {
+                    if node_text(&object, source) == "this" {
+                        let field_name = node_text(&field, source).to_string();
+                        if let Some(class_name) = &self.current_class {
+                            if let Some(val) =
+                                self.field_values.get(&(class_name.clone(), field_name))
+                            {
+                                return self.parse_stored_value(val);
+                            }
+                        }
+                    }
+                }
+                Value::Unknown
+            }
+            "update_expression" => {
+                // i++, i--, ++i, --i -- just return the current value
+                if let Some(id_node) = node.named_child(0) {
+                    if id_node.kind() == "identifier" {
+                        return self.resolve_variable_value(node_text(&id_node, source));
+                    }
+                }
+                Value::Unknown
+            }
+            _ => Value::Unknown,
+        }
+    }
+
+    /// Look up a variable name in local_variables, param_values, or field_values.
+    fn resolve_variable_value(&self, name: &str) -> Value {
+        if let Some(v) = self.local_variables.get(name) {
+            return self.parse_stored_value(v);
+        }
+        if let Some(v) = self.param_values.get(name) {
+            return self.parse_stored_value(v);
+        }
+        Value::Unknown
+    }
+
+    /// Parse a stored string value into a Value.
+    fn parse_stored_value(&self, s: &str) -> Value {
+        if s == "true" {
+            return Value::Bool(true);
+        }
+        if s == "false" {
+            return Value::Bool(false);
+        }
+        if s == "null" {
+            return Value::Null;
+        }
+        if let Ok(i) = s.parse::<i64>() {
+            return Value::Int(i);
+        }
+        if let Ok(f) = s.parse::<f64>() {
+            return Value::Float(f);
+        }
+        Value::Unknown
+    }
+
+    /// Execute an update expression (i++, i--, ++i, --i) with side effects.
+    fn execute_update_expression(&mut self, node: &Node, source: &str) {
+        let text = node_text(node, source);
+        if let Some(id_node) = node.named_child(0) {
+            if id_node.kind() == "identifier" {
+                let var_name = node_text(&id_node, source).to_string();
+                let current = self.resolve_variable_value(&var_name);
+                let new_val = if text.contains("++") {
+                    current.add(&Value::Int(1))
+                } else if text.contains("--") {
+                    current.sub(&Value::Int(1))
+                } else {
+                    return;
+                };
+                if new_val.is_known() {
+                    self.local_variables
+                        .insert(var_name, new_val.to_storage_string());
+                }
+            }
+        }
     }
 }
 
