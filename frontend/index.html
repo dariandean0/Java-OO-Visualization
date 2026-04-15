@@ -23,7 +23,15 @@
                         
                     </form>
                 </ul>
-                <button id="Export" type="button" onclick="exp()" class="btn btn-outline-success pagebutton ms-auto">Share</button>
+                <div class="ms-auto d-flex align-items-center gap-2">
+                    <button id="Export" type="button" onclick="exp()" class="btn btn-outline-success pagebutton">Share</button>
+                    <div class="help-btn-wrapper" style="position:relative;">
+                        <button id="helpBtn" type="button" class="btn btn-outline-light pagebutton" onclick="toggleHelp()" title="How to use">?</button>
+                        <div id="helpDropdown" class="help-dropdown" style="display:none;">
+                            <div id="helpContent"></div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </nav>
         <div id="Visualizer" class="page pactive">
@@ -289,5 +297,56 @@
         
         <!--Bootstrap-->
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+
+        <script>
+            const HELP_CONTENT = {
+                Visualizer: `
+                    <strong>Main Visualizer</strong>
+                    <ul>
+                        <li>Type or paste Java code into the editor on the left.</li>
+                        <li>Use the <strong>↑ / ↓</strong> buttons to step through the code line by line.</li>
+                        <li>The <strong>Memory Diagram</strong> on the right updates at each step, showing objects and variables on the heap/stack.</li>
+                        <li>Use the <strong>Share</strong> button in the navbar to generate a shareable link to your current code.</li>
+                    </ul>`,
+                Creator: `
+                    <strong>Diagram Creator</strong>
+                    <ul>
+                        <li><strong>Select / Lasso</strong> - click or drag to select one or more nodes.</li>
+                        <li><strong>Class / Interface</strong> - drag on the canvas to draw a new node; edit its name, methods, and variables in the <em>Properties</em> panel on the right.</li>
+                        <li><strong>Extends / Implements / Arrow</strong> - click the source node, then the target node to draw a connection.</li>
+                        <li>Use <strong>Reset View</strong> to re-center the canvas, <strong>Clear Canvas</strong> to start over, or the <strong>Export</strong> buttons to save your diagram as DOT, PNG, or JPEG.</li>
+                    </ul>`,
+                Comparer: `
+                    <strong>Diagram Comparer</strong>
+                    <ul>
+                        <li>First, build or load a diagram in the <strong>Diagram Creator</strong> tab - that diagram is what your code will be compared against.</li>
+                        <li>Paste your Java source code into the text area on the left.</li>
+                        <li>Click <strong>Check Diagram</strong> to run the comparison.</li>
+                        <li>Any mismatches between the code and the diagram appear as a list of <strong>Mistakes</strong> on the right.</li>
+                    </ul>`
+            };
+
+            function activePage() {
+                const active = document.querySelector('.page.pactive');
+                return active ? active.id : 'Visualizer';
+            }
+
+            function toggleHelp() {
+                const dropdown = document.getElementById('helpDropdown');
+                if (dropdown.style.display === 'none') {
+                    document.getElementById('helpContent').innerHTML = HELP_CONTENT[activePage()] || '';
+                    dropdown.style.display = 'block';
+                } else {
+                    dropdown.style.display = 'none';
+                }
+            }
+
+            document.addEventListener('click', function(e) {
+                const wrapper = document.querySelector('.help-btn-wrapper');
+                if (!wrapper.contains(e.target)) {
+                    document.getElementById('helpDropdown').style.display = 'none';
+                }
+            });
+        </script>
     </body>
 </html>

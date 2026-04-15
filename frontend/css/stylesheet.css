@@ -118,3 +118,36 @@
 
 .page { display: none; }
 .pactive { display: block; }
+
+/* Help dropdown */
+.help-dropdown {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    width: 320px;
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+    padding: 14px 16px;
+    z-index: 9999;
+    font-size: 13px;
+    color: #212529;
+    line-height: 1.55;
+}
+
+.help-dropdown strong {
+    display: block;
+    font-size: 14px;
+    margin-bottom: 8px;
+    color: #0d1a2d;
+}
+
+.help-dropdown ul {
+    margin: 0;
+    padding-left: 18px;
+}
+
+.help-dropdown ul li {
+    margin-bottom: 6px;
+}
