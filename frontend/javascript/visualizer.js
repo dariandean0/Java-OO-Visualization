@@ -40,6 +40,24 @@ import panzoom from 'https://cdn.jsdelivr.net/npm/panzoom@9.4.3/+esm'
         var dotCode = wasmVisualizeJavaCode(getEditorContent());
         var execDotCode = wasmExecFlowGen(getEditorContent());
         execDotArray = JSON.parse(execDotCode);
+        execDotArrayLen = execDotArray.length;
+
+        if (execDotArrayLen > 0) {
+            document.getElementById("execButtons").innerHTML = `
+                <div style="justify-content:center; display:flex;">
+                    <button class="btn btn-outline-dark" style="width:49%;" onclick="prevLine()">↑</button>
+                    <button class="btn btn-outline-dark" style="width:49%;" onclick="nextLine()">↓</button>
+                </div>
+                <div style="justify-content:center; display:flex;">
+                    <button id="play" class="btn btn-outline-dark" style="width:32.6%;" onclick="play()">▶</button>
+                    <button id="pause" class="btn btn-outline-dark" style="width:32.6%;" onclick="pause()">⏸</button>
+                    <button class="btn btn-outline-dark" style="width:32.6%;" onclick="reset()">🔃︎</button>
+                </div>
+            `
+        } else {
+            document.getElementById("execButtons").innerHTML = "";
+        }
+
         Viz.instance().then(viz => {
             const svg = viz.renderSVGElement(dotCode);
 
