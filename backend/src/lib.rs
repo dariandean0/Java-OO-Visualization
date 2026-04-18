@@ -4,7 +4,6 @@ pub mod no_flow;
 pub mod parser;
 pub mod visualizer;
 
-pub mod api;
 pub mod compare;
 pub mod mistake;
 pub mod repr;
