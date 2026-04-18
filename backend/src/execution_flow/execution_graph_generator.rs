@@ -2,7 +2,7 @@ use super::{
     ExecutionFlow,
     execution_analyzer::{ExecutionAction, ExecutionStep},
 };
-use crate::{analyzer::AnalysisResult, no_flow, repr::RelationshipType};
+use crate::{analyzer::AnalysisResult, repr::RelationshipType};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -187,28 +187,15 @@ impl ExecutionGraphGenerator {
     pub fn generate_execution_graphs(
         &self,
         flow: &ExecutionFlow,
-        analysis: &AnalysisResult,
+        _analysis: &AnalysisResult,
     ) -> Vec<ExecutionGraphStep> {
         let mut graphs = Vec::new();
-        let mut visibility_state = VisibilityState::new();
         let mut cumulative_steps = Vec::new();
 
         for (i, step) in flow.steps.iter().enumerate() {
-            // Update visibility state
-            visibility_state.update(step);
             cumulative_steps.push(step.clone());
 
-            // Build filtered analysis for class diagram
-            let filtered = visibility_state.build_filtered_analysis(analysis);
-
-            // Generate class diagram DOT body using no_flow generator
-            let no_flow_gen = no_flow::GraphGenerator::new();
-            let class_diagram_content = no_flow_gen.generate_dot_body(&filtered);
-
-            // Build composed DOT
-            let dot_code =
-                self.build_composed_dot(i + 1, &class_diagram_content, &cumulative_steps, step);
-
+            let dot_code = self.build_composed_dot(i + 1, &cumulative_steps, step);
             let execution_state = self.calculate_execution_state(&cumulative_steps);
 
             graphs.push(ExecutionGraphStep {
@@ -225,7 +212,6 @@ impl ExecutionGraphGenerator {
     fn build_composed_dot(
         &self,
         step_number: usize,
-        class_diagram_content: &str,
         steps: &[ExecutionStep],
         current_step: &ExecutionStep,
     ) -> String {
@@ -245,77 +231,18 @@ impl ExecutionGraphGenerator {
         dot.push_str("    labelloc=top;\n");
         dot.push_str("    fontsize=16;\n\n");
 
-        if !class_diagram_content.trim().is_empty() {
-            let highlighted = self.apply_highlights(class_diagram_content, current_step);
-            dot.push_str(&highlighted);
-            dot.push('\n');
-        }
-
-        // Supplementary panels
-        if self.config.show_call_stack && !steps.is_empty() {
-            dot.push_str(&self.generate_call_stack_subgraph(steps.last().unwrap()));
-        }
-
+        // Active Objects is now the primary panel.
         if self.config.show_object_states {
             dot.push_str(&self.generate_object_state_subgraph(steps));
         }
 
+        // Call stack is shown as a secondary panel to the side.
+        if self.config.show_call_stack && !steps.is_empty() {
+            dot.push_str(&self.generate_call_stack_subgraph(steps.last().unwrap()));
+        }
+
         dot.push_str("}\n");
         dot
-    }
-
-    fn apply_highlights(&self, dot_content: &str, current_step: &ExecutionStep) -> String {
-        let mut highlight_classes: HashSet<String> = HashSet::new();
-        let mut highlight_fields: HashSet<String> = HashSet::new();
-
-        for entry in &current_step.call_stack {
-            if let Some((class, _method)) = entry.split_once('.') {
-                highlight_classes.insert(class.to_string());
-            }
-        }
-
-        match &current_step.action {
-            ExecutionAction::FieldAccess {
-                class_name,
-                field_name,
-                ..
-            }
-            | ExecutionAction::FieldMutation {
-                class_name,
-                field_name,
-                ..
-            } => {
-                highlight_classes.insert(class_name.clone());
-                highlight_fields.insert(field_name.clone());
-            }
-            _ => {}
-        }
-
-        let mut result = dot_content.to_string();
-
-        for class_name in &highlight_classes {
-            let node_prefix = format!("\"{}_class\"", class_name);
-            let lines: Vec<&str> = result.lines().collect();
-            let mut new_lines = Vec::new();
-            for line in lines {
-                if line.contains(&node_prefix) && line.contains("shape=") {
-                    let modified = line.replace("fillcolor=white", "fillcolor=lightyellow");
-                    new_lines.push(modified);
-                } else {
-                    new_lines.push(line.to_string());
-                }
-            }
-            result = new_lines.join("\n");
-        }
-
-        for field_name in &highlight_fields {
-            result = result.replace(
-                &format!("BGCOLOR=\"lightyellow\">{field_name}"),
-                &format!("BGCOLOR=\"gold\">{field_name}"),
-            );
-        }
-
-        result
     }
 
     fn generate_call_stack_subgraph(&self, current_step: &ExecutionStep) -> String {
@@ -1004,6 +931,241 @@ mod generator_tests {
         assert!(
             !subgraph.contains("var_num"),
             "num is a primitive, should use prim_ prefix"
+        );
+    }
+
+    // -- End-to-end integration tests --
+    // These go through the full pipeline: Java source -> analyze -> generate DOT.
+    // They catch bugs that hand-crafted ExecutionStep tests miss, like value_type = "".
+
+    fn run_full_pipeline(java_code: &str) -> Vec<String> {
+        crate::execution_flow_gen(java_code)
+    }
+
+    #[test]
+    fn e2e_primitive_int_renders_as_box_with_value() {
+        // Reproduces screenshot bug: int num = 7 was missing from the visualization
+        // because value_type was "" instead of "int".
+        let java = r#"
+public class App {
+    public static void main(String[] args) {
+        int num = 7;
+    }
+}
+        "#;
+
+        let dots = run_full_pipeline(java);
+        assert!(!dots.is_empty(), "Pipeline should produce at least one step");
+
+        let last_dot = dots.last().unwrap();
+        assert!(
+            last_dot.contains("prim_num"),
+            "Final step should contain primitive node for num. DOT:\n{}",
+            last_dot
+        );
+        assert!(
+            last_dot.contains(">7<"),
+            "Final step should show value 7 inside primitive box. DOT:\n{}",
+            last_dot
+        );
+        assert!(
+            last_dot.contains("int num"),
+            "Final step should label box with type int. DOT:\n{}",
+            last_dot
+        );
+    }
+
+    #[test]
+    fn e2e_primitive_double_renders_as_box() {
+        let java = r#"
+public class App {
+    public static void main(String[] args) {
+        double pi = 3.14;
+    }
+}
+        "#;
+
+        let dots = run_full_pipeline(java);
+        let last_dot = dots.last().expect("should have steps");
+
+        assert!(last_dot.contains("prim_pi"), "DOT:\n{}", last_dot);
+        assert!(last_dot.contains("double pi"), "DOT:\n{}", last_dot);
+    }
+
+    #[test]
+    fn e2e_two_instances_have_separate_field_values() {
+        // Reproduces screenshot bug: both casper and harvey showed harvey's values
+        // because FieldMutation has no instance info and we updated all instances.
+        let java = r#"
+public class Dog {
+    String talk;
+    int age;
+
+    public Dog(String a, int anAge) {
+        this.talk = a;
+        this.age = anAge;
+    }
+
+    public static void main(String[] args) {
+        Dog casper = new Dog("arf", 5);
+        Dog harvey = new Dog("ruff", 10);
+    }
+}
+        "#;
+
+        let dots = run_full_pipeline(java);
+        let last_dot = dots.last().expect("should have steps");
+
+        // Extract only the casper object definition
+        let casper_def = last_dot
+            .lines()
+            .find(|l| l.contains("obj_casper ["))
+            .expect("should have obj_casper definition");
+        let harvey_def = last_dot
+            .lines()
+            .find(|l| l.contains("obj_harvey ["))
+            .expect("should have obj_harvey definition");
+
+        // casper must show its own values
+        assert!(
+            casper_def.contains("arf"),
+            "casper should show 'arf', got:\n{}",
+            casper_def
+        );
+        assert!(
+            casper_def.contains("= 5"),
+            "casper should show age = 5, got:\n{}",
+            casper_def
+        );
+        assert!(
+            !casper_def.contains("ruff"),
+            "casper should NOT show harvey's value 'ruff', got:\n{}",
+            casper_def
+        );
+        assert!(
+            !casper_def.contains("= 10"),
+            "casper should NOT show harvey's age 10, got:\n{}",
+            casper_def
+        );
+
+        // harvey must show its own values
+        assert!(
+            harvey_def.contains("ruff"),
+            "harvey should show 'ruff', got:\n{}",
+            harvey_def
+        );
+        assert!(
+            harvey_def.contains("= 10"),
+            "harvey should show age = 10, got:\n{}",
+            harvey_def
+        );
+    }
+
+    #[test]
+    fn e2e_constructor_field_uses_resolved_param_value() {
+        // Reproduces the original constructor bug: this.talk = a must show 'arf'
+        // in the DOT output, not the literal parameter name 'a'.
+        let java = r#"
+public class Dog {
+    String talk;
+    int age;
+
+    public Dog(String a, int anAge) {
+        this.talk = a;
+        this.age = anAge;
+    }
+
+    public static void main(String[] args) {
+        Dog casper = new Dog("arf", 5);
+    }
+}
+        "#;
+
+        let dots = run_full_pipeline(java);
+        let last_dot = dots.last().expect("should have steps");
+
+        // Strip the step title label (which echoes the source line) before checking
+        // for unresolved param names — those would naturally appear in the source.
+        let dot_no_title: String = last_dot
+            .lines()
+            .filter(|l| !l.starts_with("    label="))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        // The field values must be resolved, not literal param names
+        assert!(
+            dot_no_title.contains("talk = \"arf\""),
+            "DOT must contain resolved talk value, got:\n{}",
+            dot_no_title
+        );
+        assert!(
+            dot_no_title.contains("age = 5"),
+            "DOT must contain resolved age value, got:\n{}",
+            dot_no_title
+        );
+        // Field name = param name patterns must not appear anywhere in the rendered nodes
+        assert!(
+            !dot_no_title.contains("talk = a<") && !dot_no_title.contains("talk = a\""),
+            "DOT must NOT contain unresolved param name 'a' for talk, got:\n{}",
+            dot_no_title
+        );
+        assert!(
+            !dot_no_title.contains("age = anAge"),
+            "DOT must NOT contain unresolved param name 'anAge', got:\n{}",
+            dot_no_title
+        );
+    }
+
+    #[test]
+    fn e2e_full_screenshot_scenario() {
+        // The complete scenario from the user's screenshot:
+        // two Dog instances + one primitive
+        let java = r#"
+public class Dog {
+    String talk;
+    int age;
+
+    public Dog(String a, int anAge) {
+        this.talk = a;
+        this.age = anAge;
+    }
+
+    public static void main(String[] args) {
+        Dog casper = new Dog("arf", 5);
+        Dog harvey = new Dog("ruff", 10);
+        int num = 7;
+    }
+}
+        "#;
+
+        let dots = run_full_pipeline(java);
+        let last_dot = dots.last().expect("should have steps");
+
+        let dot_no_title: String = last_dot
+            .lines()
+            .filter(|l| !l.starts_with("    label="))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        // All three requirements from the screenshot must be met:
+        // 1. Both Dog instances visible with correct per-instance values
+        assert!(
+            dot_no_title.contains("obj_casper") && dot_no_title.contains("obj_harvey"),
+            "Both Dog instances should be visible. DOT:\n{}",
+            dot_no_title
+        );
+        // 2. Primitive num visible with value 7
+        assert!(
+            dot_no_title.contains("prim_num") && dot_no_title.contains(">7<"),
+            "Primitive num with value 7 should be visible. DOT:\n{}",
+            dot_no_title
+        );
+        // 3. Class diagram circle must not show literal param names
+        assert!(
+            !dot_no_title.contains("String talk = a<")
+                && !dot_no_title.contains("int age = anAge"),
+            "Class diagram must not show literal param names. DOT:\n{}",
+            dot_no_title
         );
     }
 }

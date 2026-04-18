@@ -641,8 +641,8 @@ public class Calculator {
 
         let last = result.last().unwrap();
         assert!(
-            last.contains("Calculator_class"),
-            "Last step should contain Calculator class diagram"
+            last.contains("obj_calc"),
+            "Last step should contain Calculator object in Active Objects panel"
         );
 
         for (i, graph) in result.iter().enumerate() {
@@ -686,10 +686,13 @@ public class Calculator {
             "Some step should show the value field with runtime value 0.0"
         );
 
-        let has_highlight = result.iter().any(|g| g.contains("fillcolor=lightyellow"));
+        // Object ellipse should show the field's runtime value
+        let has_runtime_value_on_object = result
+            .iter()
+            .any(|g| g.contains("obj_calc") && g.contains("value = 0.0"));
         assert!(
-            has_highlight,
-            "Some step should have a highlighted class node (fillcolor=lightyellow)"
+            has_runtime_value_on_object,
+            "Some step should display the runtime value 0.0 on the calc object"
         );
     }
 
