@@ -359,56 +359,147 @@ impl ExecutionGraphGenerator {
         subgraph
     }
 
-    /// Render active objects using memory diagram notation:
-    /// - Variable = rectangle with "Type varName" label above, reference arrow inside
-    /// - Object = circle with class name
+    /// Java primitive types that should render as value boxes, not object references.
+    const PRIMITIVE_TYPES: &'static [&'static str] = &[
+        "int", "long", "short", "byte", "float", "double", "char", "boolean",
+    ];
+
+    fn is_primitive_type(type_name: &str) -> bool {
+        Self::PRIMITIVE_TYPES.contains(&type_name)
+    }
+
+    /// Render active objects and primitives using memory diagram notation:
+    /// - Primitive variable = labeled box containing its value
+    /// - Object variable = box with reference arrow to class ellipse
+    /// - Class ellipse shows field names and their current runtime values
     fn generate_object_state_subgraph(&self, steps: &[ExecutionStep]) -> String {
         let mut subgraph = String::new();
-        let mut active_objects = HashMap::new();
+
+        // Collect object variables: var_name -> class_name
+        let mut active_objects: HashMap<String, String> = HashMap::new();
+        // Collect primitive variables: var_name -> (type, current_value)
+        let mut primitives: HashMap<String, (String, String)> = HashMap::new();
+        // Collect per-object field values: (var_name, field_name) -> value
+        let mut object_fields: HashMap<String, Vec<(String, String)>> = HashMap::new();
 
         for step in steps {
-            if let ExecutionAction::ObjectCreation {
-                variable_name,
-                class_name,
-                ..
-            } = &step.action
-            {
-                active_objects.insert(variable_name.clone(), class_name.clone());
+            match &step.action {
+                ExecutionAction::ObjectCreation {
+                    variable_name,
+                    class_name,
+                    ..
+                } => {
+                    active_objects.insert(variable_name.clone(), class_name.clone());
+                }
+                ExecutionAction::VariableAssignment {
+                    variable_name,
+                    value_type,
+                    value,
+                } => {
+                    // Only track primitive declarations in main scope (not "declared" or "assigned")
+                    if Self::is_primitive_type(value_type) && value != "declared" {
+                        primitives
+                            .insert(variable_name.clone(), (value_type.clone(), value.clone()));
+                    }
+                }
+                ExecutionAction::FieldMutation {
+                    class_name,
+                    field_name,
+                    new_value,
+                    ..
+                } => {
+                    // Find which variable(s) hold this class and update their field table.
+                    // Multiple variables of the same class each get their own field state,
+                    // but we only know the class name here, so update all instances.
+                    for (var_name, cls) in &active_objects {
+                        if cls == class_name {
+                            let fields = object_fields.entry(var_name.clone()).or_default();
+                            // Update existing or insert new
+                            if let Some(entry) = fields.iter_mut().find(|(n, _)| n == field_name) {
+                                entry.1 = new_value.clone();
+                            } else {
+                                fields.push((field_name.clone(), new_value.clone()));
+                            }
+                        }
+                    }
+                }
+                _ => {}
             }
         }
 
-        if !active_objects.is_empty() {
-            subgraph.push_str("    subgraph cluster_objects {\n");
-            subgraph.push_str("        label=\"Active Objects\";\n");
-            subgraph.push_str("        style=filled;\n");
-            subgraph.push_str("        fillcolor=\"#f0f0f0\";\n");
-
-            for (var_name, class_name) in &active_objects {
-                let var_id = format!("var_{}", self.sanitize_name(var_name));
-                let obj_id = format!("obj_{}", self.sanitize_name(var_name));
-
-                subgraph.push_str(&format!(
-                    "        {var_id} [label=<\
-                    <TABLE BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"0\" CELLPADDING=\"2\">\
-                    <TR><TD><FONT POINT-SIZE=\"10\">{class_name} {var_name}</FONT></TD></TR>\
-                    <TR><TD BORDER=\"1\" WIDTH=\"60\" HEIGHT=\"20\"> </TD></TR>\
-                    </TABLE>>, shape=none];\n",
-                    var_name = self.escape_html(var_name),
-                    class_name = self.escape_html(class_name),
-                ));
-
-                subgraph.push_str(&format!(
-                    "        {obj_id} [label=\"{class_name}\", shape=circle, style=filled, fillcolor=white];\n",
-                    class_name = self.escape_label(class_name),
-                ));
-
-                subgraph.push_str(&format!(
-                    "        {var_id} -> {obj_id} [arrowhead=normal];\n",
-                ));
-            }
-
-            subgraph.push_str("    }\n\n");
+        if active_objects.is_empty() && primitives.is_empty() {
+            return subgraph;
         }
+
+        subgraph.push_str("    subgraph cluster_objects {\n");
+        subgraph.push_str("        label=\"Active Objects\";\n");
+        subgraph.push_str("        style=filled;\n");
+        subgraph.push_str("        fillcolor=\"#f0f0f0\";\n");
+
+        // Render object variables
+        for (var_name, class_name) in &active_objects {
+            let var_id = format!("var_{}", self.sanitize_name(var_name));
+            let obj_id = format!("obj_{}", self.sanitize_name(var_name));
+
+            // Variable reference box
+            subgraph.push_str(&format!(
+                "        {var_id} [label=<\
+                <TABLE BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"0\" CELLPADDING=\"2\">\
+                <TR><TD><FONT POINT-SIZE=\"10\">{class_name} {var_name}</FONT></TD></TR>\
+                <TR><TD BORDER=\"1\" WIDTH=\"60\" HEIGHT=\"20\"> </TD></TR>\
+                </TABLE>>, shape=none];\n",
+                var_name = self.escape_html(var_name),
+                class_name = self.escape_html(class_name),
+            ));
+
+            // Object ellipse with class name and field values
+            let fields = object_fields.get(var_name);
+            let field_rows = fields
+                .map(|flds| {
+                    flds.iter()
+                        .map(|(name, val)| {
+                            format!(
+                                "<TR><TD ALIGN=\"LEFT\" BORDER=\"1\" BGCOLOR=\"lightyellow\">{} = {}</TD></TR>",
+                                self.escape_html(name),
+                                self.escape_html(val),
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("")
+                })
+                .unwrap_or_default();
+
+            subgraph.push_str(&format!(
+                "        {obj_id} [label=<\
+                <TABLE BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"0\" CELLPADDING=\"4\">\
+                <TR><TD><B>{class_name}</B></TD></TR>\
+                {field_rows}\
+                </TABLE>>, shape=ellipse, style=filled, fillcolor=white];\n",
+                class_name = self.escape_html(class_name),
+            ));
+
+            subgraph.push_str(&format!(
+                "        {var_id} -> {obj_id} [arrowhead=normal];\n",
+            ));
+        }
+
+        // Render primitive variables as value boxes
+        for (var_name, (type_name, value)) in &primitives {
+            let var_id = format!("prim_{}", self.sanitize_name(var_name));
+
+            subgraph.push_str(&format!(
+                "        {var_id} [label=<\
+                <TABLE BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"0\" CELLPADDING=\"2\">\
+                <TR><TD><FONT POINT-SIZE=\"10\">{type_name} {var_name}</FONT></TD></TR>\
+                <TR><TD BORDER=\"1\" WIDTH=\"60\" HEIGHT=\"25\" BGCOLOR=\"white\">{value}</TD></TR>\
+                </TABLE>>, shape=none];\n",
+                var_name = self.escape_html(var_name),
+                type_name = self.escape_html(type_name),
+                value = self.escape_html(value),
+            ));
+        }
+
+        subgraph.push_str("    }\n\n");
 
         subgraph
     }
@@ -734,5 +825,176 @@ mod generator_tests {
         assert_eq!(filtered.relationships.len(), 1);
         assert_eq!(filtered.relationships[0].from, "Calculator");
         assert_eq!(filtered.relationships[0].to, "Printer");
+    }
+
+    #[test]
+    fn primitive_variable_rendered_as_value_box() {
+        let steps = vec![ExecutionStep {
+            step_number: 1,
+            line_number: 3,
+            source_line: "int num = 5;".to_string(),
+            action: ExecutionAction::VariableAssignment {
+                variable_name: "num".to_string(),
+                value_type: "int".to_string(),
+                value: "5".to_string(),
+            },
+            call_stack: vec!["main".to_string()],
+            active_objects: vec![],
+            description: "Assign value to variable: num".to_string(),
+        }];
+
+        let generator = ExecutionGraphGenerator::new();
+        let subgraph = generator.generate_object_state_subgraph(&steps);
+
+        // Should contain the primitive variable box
+        assert!(
+            subgraph.contains("prim_num"),
+            "Subgraph should contain primitive node for num, got:\n{}",
+            subgraph
+        );
+        assert!(
+            subgraph.contains("int num"),
+            "Subgraph should label with type and name, got:\n{}",
+            subgraph
+        );
+        assert!(
+            subgraph.contains(">5<"),
+            "Subgraph should display value 5 inside the box, got:\n{}",
+            subgraph
+        );
+        // Should NOT create an object circle or arrow
+        assert!(
+            !subgraph.contains("obj_num"),
+            "Primitive should not have an object circle"
+        );
+        assert!(
+            !subgraph.contains("-> "),
+            "Primitive should not have a reference arrow"
+        );
+    }
+
+    #[test]
+    fn object_shows_field_values_on_circle() {
+        let steps = vec![
+            ExecutionStep {
+                step_number: 1,
+                line_number: 5,
+                source_line: "Dog casper = new Dog(\"arf\", 5);".to_string(),
+                action: ExecutionAction::ObjectCreation {
+                    variable_name: "casper".to_string(),
+                    class_name: "Dog".to_string(),
+                    constructor_params: vec!["\"arf\"".to_string(), "5".to_string()],
+                },
+                call_stack: vec!["main".to_string()],
+                active_objects: vec!["casper".to_string()],
+                description: "Create Dog".to_string(),
+            },
+            ExecutionStep {
+                step_number: 2,
+                line_number: 6,
+                source_line: "this.talk = a;".to_string(),
+                action: ExecutionAction::FieldMutation {
+                    class_name: "Dog".to_string(),
+                    field_name: "talk".to_string(),
+                    old_value: None,
+                    new_value: "\"arf\"".to_string(),
+                },
+                call_stack: vec!["main".to_string(), "Dog.<init>".to_string()],
+                active_objects: vec!["casper".to_string()],
+                description: "Mutate field".to_string(),
+            },
+            ExecutionStep {
+                step_number: 3,
+                line_number: 7,
+                source_line: "this.age = anAge;".to_string(),
+                action: ExecutionAction::FieldMutation {
+                    class_name: "Dog".to_string(),
+                    field_name: "age".to_string(),
+                    old_value: None,
+                    new_value: "5".to_string(),
+                },
+                call_stack: vec!["main".to_string(), "Dog.<init>".to_string()],
+                active_objects: vec!["casper".to_string()],
+                description: "Mutate field".to_string(),
+            },
+        ];
+
+        let generator = ExecutionGraphGenerator::new();
+        let subgraph = generator.generate_object_state_subgraph(&steps);
+
+        // Object variable reference box
+        assert!(
+            subgraph.contains("var_casper"),
+            "Should have variable reference for casper"
+        );
+        // Object circle
+        assert!(
+            subgraph.contains("obj_casper"),
+            "Should have object node for casper"
+        );
+        // Field values shown on the object
+        assert!(
+            subgraph.contains("talk = \"arf\""),
+            "Object should show talk field with value, got:\n{}",
+            subgraph
+        );
+        assert!(
+            subgraph.contains("age = 5"),
+            "Object should show age field with value, got:\n{}",
+            subgraph
+        );
+        // Reference arrow
+        assert!(
+            subgraph.contains("var_casper -> obj_casper"),
+            "Should have reference arrow from var to object"
+        );
+    }
+
+    #[test]
+    fn mixed_primitives_and_objects() {
+        let steps = vec![
+            ExecutionStep {
+                step_number: 1,
+                line_number: 3,
+                source_line: "int num = 5;".to_string(),
+                action: ExecutionAction::VariableAssignment {
+                    variable_name: "num".to_string(),
+                    value_type: "int".to_string(),
+                    value: "5".to_string(),
+                },
+                call_stack: vec!["main".to_string()],
+                active_objects: vec![],
+                description: "Assign".to_string(),
+            },
+            ExecutionStep {
+                step_number: 2,
+                line_number: 4,
+                source_line: "Dog fido = new Dog();".to_string(),
+                action: ExecutionAction::ObjectCreation {
+                    variable_name: "fido".to_string(),
+                    class_name: "Dog".to_string(),
+                    constructor_params: vec![],
+                },
+                call_stack: vec!["main".to_string()],
+                active_objects: vec!["fido".to_string()],
+                description: "Create Dog".to_string(),
+            },
+        ];
+
+        let generator = ExecutionGraphGenerator::new();
+        let subgraph = generator.generate_object_state_subgraph(&steps);
+
+        // Both should be present
+        assert!(subgraph.contains("prim_num"), "Should have primitive num");
+        assert!(subgraph.contains("var_fido"), "Should have object var fido");
+        assert!(
+            subgraph.contains("obj_fido"),
+            "Should have object circle fido"
+        );
+        // Primitive should not be confused with object
+        assert!(
+            !subgraph.contains("var_num"),
+            "num is a primitive, should use prim_ prefix"
+        );
     }
 }

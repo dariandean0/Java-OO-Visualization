@@ -252,7 +252,15 @@ impl JavaAnalyzer {
                     field.is_static = self.has_modifier(&child, source, "static");
                     field.is_final = self.has_modifier(&child, source, "final");
                 }
-                "type" | "integral_type" | "floating_point_type" | "boolean_type" | "void_type" => {
+                "type"
+                | "integral_type"
+                | "floating_point_type"
+                | "boolean_type"
+                | "void_type"
+                | "type_identifier"
+                | "generic_type"
+                | "array_type"
+                | "scoped_type_identifier" => {
                     field.field_type = node_text(&child, source).to_string();
                 }
                 "variable_declarator" => {
@@ -286,7 +294,15 @@ impl JavaAnalyzer {
                     method.is_static = self.has_modifier(&child, source, "static");
                     method.is_abstract = self.has_modifier(&child, source, "abstract");
                 }
-                "type" | "integral_type" | "floating_point_type" | "boolean_type" | "void_type" => {
+                "type"
+                | "integral_type"
+                | "floating_point_type"
+                | "boolean_type"
+                | "void_type"
+                | "type_identifier"
+                | "generic_type"
+                | "array_type"
+                | "scoped_type_identifier" => {
                     method.return_type = node_text(&child, source).to_string();
                 }
                 "identifier" => {
@@ -397,7 +413,15 @@ impl JavaAnalyzer {
         let mut cursor = param_node.walk();
         for child in param_node.children(&mut cursor) {
             match child.kind() {
-                "type" | "integral_type" | "floating_point_type" | "boolean_type" | "void_type" => {
+                "type"
+                | "integral_type"
+                | "floating_point_type"
+                | "boolean_type"
+                | "void_type"
+                | "type_identifier"
+                | "generic_type"
+                | "array_type"
+                | "scoped_type_identifier" => {
                     param_type = node_text(&child, source).to_string();
                 }
                 "identifier" => param_name = node_text(&child, source).to_string(),

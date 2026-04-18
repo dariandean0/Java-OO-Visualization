@@ -1982,4 +1982,89 @@ mod tests {
         // Verify we have exactly 4 entries
         assert_eq!(map.len(), 4, "Map should have exactly 4 entries");
     }
+
+    #[test]
+    fn constructor_resolves_reference_type_params() {
+        // Reproduces the bug where String parameter `a` was not captured by
+        // static analysis (type_identifier not matched), causing:
+        //   - this.talk = a  -> stored as literal "a" instead of "arf"
+        //   - this.age = anAge -> stored as "\"arf\"" (wrong index)
+        let java_code = r#"
+public class Dog {
+    String talk;
+    int age;
+
+    public Dog(String a, int anAge) {
+        this.talk = a;
+        this.age = anAge;
+    }
+
+    public static void main(String[] args) {
+        Dog casper = new Dog("arf", 5);
+    }
+}
+        "#;
+
+        let mut parser = JavaParser::new().unwrap();
+        let tree = parser.parse(java_code).unwrap();
+        let root = parser.get_root_node(&tree);
+
+        let mut analyzer = JavaAnalyzer::new();
+        let analysis = analyzer.analyze(&root, java_code);
+
+        // Verify static analysis captured BOTH constructor params
+        let dog_class = analysis.classes.iter().find(|c| c.name == "Dog").unwrap();
+        let ctor = dog_class
+            .constructors
+            .first()
+            .expect("Dog should have a constructor");
+        assert_eq!(
+            ctor.parameters.len(),
+            2,
+            "Constructor should have 2 parameters, got {:?}",
+            ctor.parameters
+        );
+        assert_eq!(ctor.parameters[0].name, "a");
+        assert_eq!(ctor.parameters[0].param_type, "String");
+        assert_eq!(ctor.parameters[1].name, "anAge");
+        assert_eq!(ctor.parameters[1].param_type, "int");
+
+        // Run execution flow
+        let mut exec_analyzer = ExecutionAnalyzer::new(analysis);
+        let flow = exec_analyzer.analyze_execution_flow(&root, java_code);
+
+        for step in &flow.steps {
+            eprintln!(
+                "Step {} (line {}): {:?}",
+                step.step_number, step.line_number, step.action
+            );
+        }
+
+        // Find the FieldMutation steps inside the constructor
+        let talk_mutation = flow.steps.iter().find(|s| {
+            matches!(&s.action, ExecutionAction::FieldMutation { field_name, .. } if field_name == "talk")
+        }).expect("Should have a FieldMutation for talk");
+
+        let age_mutation = flow.steps.iter().find(|s| {
+            matches!(&s.action, ExecutionAction::FieldMutation { field_name, .. } if field_name == "age")
+        }).expect("Should have a FieldMutation for age");
+
+        // The critical assertions: values must be the resolved call-site args,
+        // NOT the raw parameter names
+        if let ExecutionAction::FieldMutation { new_value, .. } = &talk_mutation.action {
+            assert_eq!(
+                new_value, "\"arf\"",
+                "talk should be '\"arf\"' (resolved from param a), got {}",
+                new_value
+            );
+        }
+
+        if let ExecutionAction::FieldMutation { new_value, .. } = &age_mutation.action {
+            assert_eq!(
+                new_value, "5",
+                "age should be \"5\" (resolved from param anAge), got {}",
+                new_value
+            );
+        }
+    }
 }
