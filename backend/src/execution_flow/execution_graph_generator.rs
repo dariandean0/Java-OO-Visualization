@@ -2,9 +2,8 @@ use super::{
     ExecutionFlow,
     execution_analyzer::{ExecutionAction, ExecutionStep},
 };
-use crate::{analyzer::AnalysisResult, repr::RelationshipType};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct ExecutionGraphConfig {
@@ -18,132 +17,6 @@ impl Default for ExecutionGraphConfig {
             show_call_stack: true,
             show_object_states: true,
         }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct VisibilityState {
-    pub visible_classes: HashSet<String>,
-    pub visible_fields: HashSet<(String, String)>,
-    pub visible_methods: HashSet<(String, String)>,
-    pub runtime_values: HashMap<(String, String), String>,
-}
-
-impl Default for VisibilityState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl VisibilityState {
-    pub fn new() -> Self {
-        VisibilityState {
-            visible_classes: HashSet::new(),
-            visible_fields: HashSet::new(),
-            visible_methods: HashSet::new(),
-            runtime_values: HashMap::new(),
-        }
-    }
-
-    pub fn update(&mut self, step: &ExecutionStep) {
-        match &step.action {
-            ExecutionAction::ObjectCreation { class_name, .. } => {
-                self.visible_classes.insert(class_name.clone());
-            }
-            ExecutionAction::MethodCall {
-                target_class,
-                method_name,
-                ..
-            } => {
-                self.visible_classes.insert(target_class.clone());
-                self.visible_methods
-                    .insert((target_class.clone(), method_name.clone()));
-            }
-            ExecutionAction::MethodEntry { .. } | ExecutionAction::MethodExit { .. } => {}
-            ExecutionAction::FieldAccess {
-                class_name,
-                field_name,
-                value,
-            } => {
-                self.visible_fields
-                    .insert((class_name.clone(), field_name.clone()));
-                if let Some(val) = value {
-                    self.runtime_values
-                        .insert((class_name.clone(), field_name.clone()), val.clone());
-                }
-            }
-            ExecutionAction::FieldMutation {
-                class_name,
-                field_name,
-                new_value,
-                ..
-            } => {
-                self.visible_fields
-                    .insert((class_name.clone(), field_name.clone()));
-                self.runtime_values
-                    .insert((class_name.clone(), field_name.clone()), new_value.clone());
-            }
-            ExecutionAction::VariableAssignment { .. }
-            | ExecutionAction::MethodReturn { .. }
-            | ExecutionAction::ConditionalBranch { .. }
-            | ExecutionAction::LoopIteration { .. } => {}
-        }
-    }
-
-    pub fn build_filtered_analysis(&self, full_analysis: &AnalysisResult) -> AnalysisResult {
-        let mut result = full_analysis.clone();
-
-        result
-            .classes
-            .retain(|c| self.visible_classes.contains(&c.name));
-
-        for class in &mut result.classes {
-            let class_name = class.name.clone();
-
-            class.fields.retain(|f| {
-                self.visible_fields
-                    .contains(&(class_name.clone(), f.name.clone()))
-            });
-
-            for field in &mut class.fields {
-                if let Some(val) = self
-                    .runtime_values
-                    .get(&(class_name.clone(), field.name.clone()))
-                {
-                    field.name = format!("{} = {}", field.name, val);
-                }
-            }
-
-            class.methods.retain(|m| {
-                self.visible_methods
-                    .contains(&(class_name.clone(), m.name.clone()))
-            });
-        }
-
-        result.relationships.retain(|r| match r.kind {
-            RelationshipType::MethodCall | RelationshipType::Calls => {
-                let from_visible = if let Some((cls, meth)) = r.from.split_once('.') {
-                    self.visible_classes.contains(cls)
-                        && self
-                            .visible_methods
-                            .contains(&(cls.to_string(), meth.to_string()))
-                } else {
-                    self.visible_classes.contains(&r.from)
-                };
-                let to_visible = if let Some((cls, meth)) = r.to.split_once('.') {
-                    self.visible_classes.contains(cls)
-                        && self
-                            .visible_methods
-                            .contains(&(cls.to_string(), meth.to_string()))
-                } else {
-                    self.visible_classes.contains(&r.to)
-                };
-                from_visible && to_visible
-            }
-            _ => self.visible_classes.contains(&r.from) && self.visible_classes.contains(&r.to),
-        });
-
-        result
     }
 }
 
@@ -184,11 +57,7 @@ impl ExecutionGraphGenerator {
         ExecutionGraphGenerator { config }
     }
 
-    pub fn generate_execution_graphs(
-        &self,
-        flow: &ExecutionFlow,
-        _analysis: &AnalysisResult,
-    ) -> Vec<ExecutionGraphStep> {
+    pub fn generate_execution_graphs(&self, flow: &ExecutionFlow) -> Vec<ExecutionGraphStep> {
         let mut graphs = Vec::new();
         let mut cumulative_steps = Vec::new();
 
@@ -490,8 +359,6 @@ impl ExecutionGraphGenerator {
 mod generator_tests {
     use super::super::execution_analyzer::{ExecutionAction, ExecutionStep};
     use super::*;
-    use crate::analyzer::AnalysisResult;
-    use crate::repr::{JavaClass, JavaField, JavaMethod, Relationship, RelationshipType};
 
     #[test]
     fn execution_graph_generation() {
@@ -516,432 +383,22 @@ mod generator_tests {
             max_call_stack_depth: 1,
         };
 
-        let analysis = AnalysisResult {
-            classes: vec![JavaClass {
-                name: "Calculator".to_string(),
-                visibility: "public".to_string(),
-                is_abstract: false,
-                is_interface: false,
-                extends: None,
-                implements: vec![],
-                fields: vec![],
-                methods: vec![],
-                constructors: vec![],
-            }],
-            relationships: vec![],
-            object_registry: HashMap::new(),
-            type_inference: HashMap::new(),
-        };
-
         let generator = ExecutionGraphGenerator::new();
-        let graphs = generator.generate_execution_graphs(&flow, &analysis);
+        let graphs = generator.generate_execution_graphs(&flow);
 
         assert_eq!(graphs.len(), 1);
         assert!(graphs[0].dot_code.contains("ExecutionStep_1"));
         assert!(graphs[0].dot_code.contains("Calculator"));
     }
 
-    // -- Helper builders for VisibilityState tests --
-
-    fn make_step(action: ExecutionAction) -> ExecutionStep {
-        ExecutionStep {
-            step_number: 1,
-            line_number: 1,
-            source_line: String::new(),
-            action,
-            call_stack: vec!["main".to_string()],
-            active_objects: vec![],
-            description: String::new(),
-        }
-    }
-
-    fn sample_analysis() -> AnalysisResult {
-        AnalysisResult {
-            classes: vec![
-                JavaClass {
-                    name: "Calculator".to_string(),
-                    visibility: "public".to_string(),
-                    is_abstract: false,
-                    is_interface: false,
-                    extends: None,
-                    implements: vec![],
-                    fields: vec![JavaField {
-                        name: "value".to_string(),
-                        field_type: "double".to_string(),
-                        visibility: "private".to_string(),
-                        is_static: false,
-                        is_final: false,
-                    }],
-                    methods: vec![JavaMethod {
-                        name: "add".to_string(),
-                        return_type: "void".to_string(),
-                        visibility: "public".to_string(),
-                        is_static: false,
-                        is_abstract: false,
-                        parameters: vec![],
-                        calls: vec![],
-                    }],
-                    constructors: vec![],
-                },
-                JavaClass {
-                    name: "Printer".to_string(),
-                    visibility: "public".to_string(),
-                    is_abstract: false,
-                    is_interface: false,
-                    extends: None,
-                    implements: vec![],
-                    fields: vec![],
-                    methods: vec![JavaMethod {
-                        name: "print".to_string(),
-                        return_type: "void".to_string(),
-                        visibility: "public".to_string(),
-                        is_static: false,
-                        is_abstract: false,
-                        parameters: vec![],
-                        calls: vec![],
-                    }],
-                    constructors: vec![],
-                },
-            ],
-            relationships: vec![Relationship {
-                from: "Calculator".to_string(),
-                to: "Printer".to_string(),
-                kind: RelationshipType::Uses,
-            }],
-            object_registry: HashMap::new(),
-            type_inference: HashMap::new(),
-        }
-    }
-
-    // -- VisibilityState tests --
-
-    #[test]
-    fn object_creation_makes_class_visible() {
-        let mut state = VisibilityState::new();
-        let step = make_step(ExecutionAction::ObjectCreation {
-            variable_name: "calc".to_string(),
-            class_name: "Calculator".to_string(),
-            constructor_params: vec![],
-        });
-
-        state.update(&step);
-
-        assert!(state.visible_classes.contains("Calculator"));
-    }
-
-    #[test]
-    fn method_call_makes_method_visible() {
-        let mut state = VisibilityState::new();
-        let step = make_step(ExecutionAction::MethodCall {
-            caller: Some("calc".to_string()),
-            method_name: "add".to_string(),
-            target_class: "Calculator".to_string(),
-            parameters: vec!["5".to_string()],
-        });
-
-        state.update(&step);
-
-        assert!(state.visible_classes.contains("Calculator"));
-        assert!(
-            state
-                .visible_methods
-                .contains(&("Calculator".to_string(), "add".to_string()))
-        );
-    }
-
-    #[test]
-    fn field_mutation_adds_runtime_value() {
-        let mut state = VisibilityState::new();
-        let step = make_step(ExecutionAction::FieldMutation {
-            class_name: "Calculator".to_string(),
-            field_name: "value".to_string(),
-            old_value: None,
-            new_value: "5.0".to_string(),
-        });
-
-        state.update(&step);
-
-        assert!(
-            state
-                .visible_fields
-                .contains(&("Calculator".to_string(), "value".to_string()))
-        );
-        assert_eq!(
-            state
-                .runtime_values
-                .get(&("Calculator".to_string(), "value".to_string())),
-            Some(&"5.0".to_string())
-        );
-    }
-
-    #[test]
-    fn method_entry_exit_are_noop_on_visibility() {
-        let mut state = VisibilityState::new();
-
-        let enter = make_step(ExecutionAction::MethodEntry {
-            class_name: "Calculator".to_string(),
-            method_name: "add".to_string(),
-        });
-        state.update(&enter);
-
-        let exit = make_step(ExecutionAction::MethodExit {
-            class_name: "Calculator".to_string(),
-            method_name: "add".to_string(),
-            return_value: None,
-        });
-        state.update(&exit);
-
-        assert!(state.visible_classes.is_empty());
-        assert!(state.visible_fields.is_empty());
-        assert!(state.visible_methods.is_empty());
-    }
-
-    #[test]
-    fn build_filtered_analysis_returns_only_visible_elements() {
-        let mut state = VisibilityState::new();
-        let analysis = sample_analysis();
-
-        // Make only Calculator visible with its add method and value field
-        state.visible_classes.insert("Calculator".to_string());
-        state
-            .visible_methods
-            .insert(("Calculator".to_string(), "add".to_string()));
-        state
-            .visible_fields
-            .insert(("Calculator".to_string(), "value".to_string()));
-        state.runtime_values.insert(
-            ("Calculator".to_string(), "value".to_string()),
-            "5.0".to_string(),
-        );
-
-        let filtered = state.build_filtered_analysis(&analysis);
-
-        // Only Calculator class should remain
-        assert_eq!(filtered.classes.len(), 1);
-        assert_eq!(filtered.classes[0].name, "Calculator");
-
-        // Only the "add" method should remain
-        assert_eq!(filtered.classes[0].methods.len(), 1);
-        assert_eq!(filtered.classes[0].methods[0].name, "add");
-
-        // Only the "value" field, with runtime value appended
-        assert_eq!(filtered.classes[0].fields.len(), 1);
-        assert_eq!(filtered.classes[0].fields[0].name, "value = 5.0");
-
-        // Relationship between Calculator and Printer is gone (Printer not visible)
-        assert!(filtered.relationships.is_empty());
-    }
-
-    #[test]
-    fn relationships_visible_only_when_both_endpoints_visible() {
-        let mut state = VisibilityState::new();
-        let analysis = sample_analysis();
-
-        // Only one endpoint visible -> filtered analysis has no relationships
-        let step1 = make_step(ExecutionAction::ObjectCreation {
-            variable_name: "calc".to_string(),
-            class_name: "Calculator".to_string(),
-            constructor_params: vec![],
-        });
-        state.update(&step1);
-        let filtered = state.build_filtered_analysis(&analysis);
-        assert!(
-            filtered.relationships.is_empty(),
-            "Relationship should not appear with only one endpoint"
-        );
-
-        // Both endpoints visible -> relationship appears in filtered analysis
-        let step2 = make_step(ExecutionAction::ObjectCreation {
-            variable_name: "p".to_string(),
-            class_name: "Printer".to_string(),
-            constructor_params: vec![],
-        });
-        state.update(&step2);
-        let filtered = state.build_filtered_analysis(&analysis);
-        assert_eq!(filtered.relationships.len(), 1);
-        assert_eq!(filtered.relationships[0].from, "Calculator");
-        assert_eq!(filtered.relationships[0].to, "Printer");
-    }
-
-    #[test]
-    fn primitive_variable_rendered_as_value_box() {
-        let steps = vec![ExecutionStep {
-            step_number: 1,
-            line_number: 3,
-            source_line: "int num = 5;".to_string(),
-            action: ExecutionAction::VariableAssignment {
-                variable_name: "num".to_string(),
-                value_type: "int".to_string(),
-                value: "5".to_string(),
-            },
-            call_stack: vec!["main".to_string()],
-            active_objects: vec![],
-            description: "Assign value to variable: num".to_string(),
-        }];
-
-        let generator = ExecutionGraphGenerator::new();
-        let subgraph = generator.generate_object_state_subgraph(&steps);
-
-        // Should contain the primitive variable box
-        assert!(
-            subgraph.contains("prim_num"),
-            "Subgraph should contain primitive node for num, got:\n{}",
-            subgraph
-        );
-        assert!(
-            subgraph.contains("int num"),
-            "Subgraph should label with type and name, got:\n{}",
-            subgraph
-        );
-        assert!(
-            subgraph.contains(">5<"),
-            "Subgraph should display value 5 inside the box, got:\n{}",
-            subgraph
-        );
-        // Should NOT create an object circle or arrow
-        assert!(
-            !subgraph.contains("obj_num"),
-            "Primitive should not have an object circle"
-        );
-        assert!(
-            !subgraph.contains("-> "),
-            "Primitive should not have a reference arrow"
-        );
-    }
-
-    #[test]
-    fn object_shows_field_values_on_circle() {
-        let steps = vec![
-            ExecutionStep {
-                step_number: 1,
-                line_number: 5,
-                source_line: "Dog casper = new Dog(\"arf\", 5);".to_string(),
-                action: ExecutionAction::ObjectCreation {
-                    variable_name: "casper".to_string(),
-                    class_name: "Dog".to_string(),
-                    constructor_params: vec!["\"arf\"".to_string(), "5".to_string()],
-                },
-                call_stack: vec!["main".to_string()],
-                active_objects: vec!["casper".to_string()],
-                description: "Create Dog".to_string(),
-            },
-            ExecutionStep {
-                step_number: 2,
-                line_number: 6,
-                source_line: "this.talk = a;".to_string(),
-                action: ExecutionAction::FieldMutation {
-                    class_name: "Dog".to_string(),
-                    field_name: "talk".to_string(),
-                    old_value: None,
-                    new_value: "\"arf\"".to_string(),
-                },
-                call_stack: vec!["main".to_string(), "Dog.<init>".to_string()],
-                active_objects: vec!["casper".to_string()],
-                description: "Mutate field".to_string(),
-            },
-            ExecutionStep {
-                step_number: 3,
-                line_number: 7,
-                source_line: "this.age = anAge;".to_string(),
-                action: ExecutionAction::FieldMutation {
-                    class_name: "Dog".to_string(),
-                    field_name: "age".to_string(),
-                    old_value: None,
-                    new_value: "5".to_string(),
-                },
-                call_stack: vec!["main".to_string(), "Dog.<init>".to_string()],
-                active_objects: vec!["casper".to_string()],
-                description: "Mutate field".to_string(),
-            },
-        ];
-
-        let generator = ExecutionGraphGenerator::new();
-        let subgraph = generator.generate_object_state_subgraph(&steps);
-
-        // Object variable reference box
-        assert!(
-            subgraph.contains("var_casper"),
-            "Should have variable reference for casper"
-        );
-        // Object circle
-        assert!(
-            subgraph.contains("obj_casper"),
-            "Should have object node for casper"
-        );
-        // Field values shown on the object
-        assert!(
-            subgraph.contains("talk = \"arf\""),
-            "Object should show talk field with value, got:\n{}",
-            subgraph
-        );
-        assert!(
-            subgraph.contains("age = 5"),
-            "Object should show age field with value, got:\n{}",
-            subgraph
-        );
-        // Reference arrow
-        assert!(
-            subgraph.contains("var_casper -> obj_casper"),
-            "Should have reference arrow from var to object"
-        );
-    }
-
-    #[test]
-    fn mixed_primitives_and_objects() {
-        let steps = vec![
-            ExecutionStep {
-                step_number: 1,
-                line_number: 3,
-                source_line: "int num = 5;".to_string(),
-                action: ExecutionAction::VariableAssignment {
-                    variable_name: "num".to_string(),
-                    value_type: "int".to_string(),
-                    value: "5".to_string(),
-                },
-                call_stack: vec!["main".to_string()],
-                active_objects: vec![],
-                description: "Assign".to_string(),
-            },
-            ExecutionStep {
-                step_number: 2,
-                line_number: 4,
-                source_line: "Dog fido = new Dog();".to_string(),
-                action: ExecutionAction::ObjectCreation {
-                    variable_name: "fido".to_string(),
-                    class_name: "Dog".to_string(),
-                    constructor_params: vec![],
-                },
-                call_stack: vec!["main".to_string()],
-                active_objects: vec!["fido".to_string()],
-                description: "Create Dog".to_string(),
-            },
-        ];
-
-        let generator = ExecutionGraphGenerator::new();
-        let subgraph = generator.generate_object_state_subgraph(&steps);
-
-        // Both should be present
-        assert!(subgraph.contains("prim_num"), "Should have primitive num");
-        assert!(subgraph.contains("var_fido"), "Should have object var fido");
-        assert!(
-            subgraph.contains("obj_fido"),
-            "Should have object circle fido"
-        );
-        // Primitive should not be confused with object
-        assert!(
-            !subgraph.contains("var_num"),
-            "num is a primitive, should use prim_ prefix"
-        );
-    }
-
     // -- End-to-end integration tests --
     // These go through the full pipeline: Java source -> analyze -> generate DOT.
-    // They catch bugs that hand-crafted ExecutionStep tests miss, like value_type = "".
+    // Hand-crafted step tests (which bypass the analyzer) can mask real bugs such
+    // as an empty `value_type`, so only full-pipeline tests live here.
 
     fn run_full_pipeline(java_code: &str) -> Vec<String> {
         crate::execution_flow_gen(java_code)
     }
-
     #[test]
     fn e2e_primitive_int_renders_as_box_with_value() {
         // Reproduces screenshot bug: int num = 7 was missing from the visualization
@@ -955,7 +412,10 @@ public class App {
         "#;
 
         let dots = run_full_pipeline(java);
-        assert!(!dots.is_empty(), "Pipeline should produce at least one step");
+        assert!(
+            !dots.is_empty(),
+            "Pipeline should produce at least one step"
+        );
 
         let last_dot = dots.last().unwrap();
         assert!(
@@ -973,23 +433,6 @@ public class App {
             "Final step should label box with type int. DOT:\n{}",
             last_dot
         );
-    }
-
-    #[test]
-    fn e2e_primitive_double_renders_as_box() {
-        let java = r#"
-public class App {
-    public static void main(String[] args) {
-        double pi = 3.14;
-    }
-}
-        "#;
-
-        let dots = run_full_pipeline(java);
-        let last_dot = dots.last().expect("should have steps");
-
-        assert!(last_dot.contains("prim_pi"), "DOT:\n{}", last_dot);
-        assert!(last_dot.contains("double pi"), "DOT:\n{}", last_dot);
     }
 
     #[test]
@@ -1162,8 +605,7 @@ public class Dog {
         );
         // 3. Class diagram circle must not show literal param names
         assert!(
-            !dot_no_title.contains("String talk = a<")
-                && !dot_no_title.contains("int age = anAge"),
+            !dot_no_title.contains("String talk = a<") && !dot_no_title.contains("int age = anAge"),
             "Class diagram must not show literal param names. DOT:\n{}",
             dot_no_title
         );
