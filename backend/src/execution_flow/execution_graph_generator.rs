@@ -381,6 +381,8 @@ impl ExecutionGraphGenerator {
         let mut primitives: HashMap<String, (String, String)> = HashMap::new();
         // Collect per-object field values: (var_name, field_name) -> value
         let mut object_fields: HashMap<String, Vec<(String, String)>> = HashMap::new();
+        // Track which variable was most recently created per class_name
+        let mut last_created: HashMap<String, String> = HashMap::new();
 
         for step in steps {
             match &step.action {
@@ -390,6 +392,8 @@ impl ExecutionGraphGenerator {
                     ..
                 } => {
                     active_objects.insert(variable_name.clone(), class_name.clone());
+                    // Track which instance was most recently created per class
+                    last_created.insert(class_name.clone(), variable_name.clone());
                 }
                 ExecutionAction::VariableAssignment {
                     variable_name,
@@ -408,18 +412,23 @@ impl ExecutionGraphGenerator {
                     new_value,
                     ..
                 } => {
-                    // Find which variable(s) hold this class and update their field table.
-                    // Multiple variables of the same class each get their own field state,
-                    // but we only know the class name here, so update all instances.
+                    // Attribute mutation to the most recently created instance of this class.
+                    // Falls back to updating all instances if no creation was tracked.
+                    let target_var = last_created.get(class_name).cloned();
                     for (var_name, cls) in &active_objects {
-                        if cls == class_name {
-                            let fields = object_fields.entry(var_name.clone()).or_default();
-                            // Update existing or insert new
-                            if let Some(entry) = fields.iter_mut().find(|(n, _)| n == field_name) {
-                                entry.1 = new_value.clone();
-                            } else {
-                                fields.push((field_name.clone(), new_value.clone()));
+                        if cls != class_name {
+                            continue;
+                        }
+                        if let Some(ref target) = target_var {
+                            if var_name != target {
+                                continue;
                             }
+                        }
+                        let fields = object_fields.entry(var_name.clone()).or_default();
+                        if let Some(entry) = fields.iter_mut().find(|(n, _)| n == field_name) {
+                            entry.1 = new_value.clone();
+                        } else {
+                            fields.push((field_name.clone(), new_value.clone()));
                         }
                     }
                 }

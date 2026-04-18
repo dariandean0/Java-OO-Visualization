@@ -301,7 +301,14 @@ impl ExecutionAnalyzer {
         let mut cursor = decl_node.walk();
         for child in decl_node.children(&mut cursor) {
             match child.kind() {
-                "type" => {
+                "type"
+                | "integral_type"
+                | "floating_point_type"
+                | "boolean_type"
+                | "type_identifier"
+                | "generic_type"
+                | "array_type"
+                | "scoped_type_identifier" => {
                     class_name = self.extract_type_name(&child, source);
                 }
                 "variable_declarator" => {
