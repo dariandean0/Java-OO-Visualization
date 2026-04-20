@@ -3,11 +3,17 @@ use std::fmt;
 /// Represents a runtime value during execution flow analysis.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
+    /// 64-bit signed integer literal
     Int(i64),
+    /// 64-bit floating-point literal
     Float(f64),
+    /// Boolean literal
     Bool(bool),
+    /// String literal
     Str(String),
+    /// Java `null` reference
     Null,
+    /// Value that could not be evaluated statically
     Unknown,
 }
 
@@ -83,6 +89,8 @@ impl Value {
 
     // -- Arithmetic --
 
+    /// Numeric addition. Int+Int stays Int (wrapping); any Float promotes to Float.
+    /// Propagates `Unknown` if either side is `Unknown`.
     pub fn add(&self, other: &Value) -> Value {
         match (self, other) {
             (Value::Unknown, _) | (_, Value::Unknown) => Value::Unknown,
@@ -94,6 +102,8 @@ impl Value {
         }
     }
 
+    /// Numeric subtraction. Int-Int stays Int (wrapping); any Float promotes to Float.
+    /// Propagates `Unknown` if either side is `Unknown`.
     pub fn sub(&self, other: &Value) -> Value {
         match (self, other) {
             (Value::Unknown, _) | (_, Value::Unknown) => Value::Unknown,
@@ -105,6 +115,8 @@ impl Value {
         }
     }
 
+    /// Numeric multiplication. Int*Int stays Int (wrapping); any Float promotes to Float.
+    /// Propagates `Unknown` if either side is `Unknown`.
     pub fn mul(&self, other: &Value) -> Value {
         match (self, other) {
             (Value::Unknown, _) | (_, Value::Unknown) => Value::Unknown,
@@ -116,6 +128,8 @@ impl Value {
         }
     }
 
+    /// Numeric division. Int/Int truncates toward zero; any Float promotes to Float.
+    /// Division by zero and `Unknown` operands yield `Unknown`.
     pub fn div(&self, other: &Value) -> Value {
         match (self, other) {
             (Value::Unknown, _) | (_, Value::Unknown) => Value::Unknown,
@@ -134,6 +148,8 @@ impl Value {
         }
     }
 
+    /// Numeric remainder (`%`). Int%Int stays Int; any Float promotes to Float.
+    /// Remainder by zero and `Unknown` operands yield `Unknown`.
     pub fn rem(&self, other: &Value) -> Value {
         match (self, other) {
             (Value::Unknown, _) | (_, Value::Unknown) => Value::Unknown,
@@ -154,6 +170,8 @@ impl Value {
 
     // -- Comparison --
 
+    /// Less-than comparison. Promotes to f64 for mixed numerics.
+    /// Propagates `Unknown` if either side is `Unknown` or non-numeric.
     pub fn lt(&self, other: &Value) -> Value {
         match (self, other) {
             (Value::Unknown, _) | (_, Value::Unknown) => Value::Unknown,
@@ -164,6 +182,8 @@ impl Value {
         }
     }
 
+    /// Less-than-or-equal comparison. Promotes to f64 for mixed numerics.
+    /// Propagates `Unknown` if either side is `Unknown` or non-numeric.
     pub fn le(&self, other: &Value) -> Value {
         match (self, other) {
             (Value::Unknown, _) | (_, Value::Unknown) => Value::Unknown,
@@ -174,6 +194,8 @@ impl Value {
         }
     }
 
+    /// Greater-than comparison. Promotes to f64 for mixed numerics.
+    /// Propagates `Unknown` if either side is `Unknown` or non-numeric.
     pub fn gt(&self, other: &Value) -> Value {
         match (self, other) {
             (Value::Unknown, _) | (_, Value::Unknown) => Value::Unknown,
@@ -184,6 +206,8 @@ impl Value {
         }
     }
 
+    /// Greater-than-or-equal comparison. Promotes to f64 for mixed numerics.
+    /// Propagates `Unknown` if either side is `Unknown` or non-numeric.
     pub fn ge(&self, other: &Value) -> Value {
         match (self, other) {
             (Value::Unknown, _) | (_, Value::Unknown) => Value::Unknown,
@@ -194,6 +218,8 @@ impl Value {
         }
     }
 
+    /// Equality comparison. Bools compare directly; numerics promote to f64.
+    /// Propagates `Unknown` if either side is `Unknown` or the types don't match.
     pub fn eq_val(&self, other: &Value) -> Value {
         match (self, other) {
             (Value::Unknown, _) | (_, Value::Unknown) => Value::Unknown,
@@ -205,6 +231,7 @@ impl Value {
         }
     }
 
+    /// Inequality comparison, the dual of [`Value::eq_val`].
     pub fn ne_val(&self, other: &Value) -> Value {
         match (self, other) {
             (Value::Unknown, _) | (_, Value::Unknown) => Value::Unknown,
@@ -218,6 +245,8 @@ impl Value {
 
     // -- Boolean --
 
+    /// Short-circuiting boolean AND. `false && Unknown` is `false`;
+    /// anything else with an `Unknown` operand is `Unknown`.
     pub fn and(&self, other: &Value) -> Value {
         // Short-circuit: false && anything = false
         if let Some(false) = self.as_bool() {
@@ -229,6 +258,8 @@ impl Value {
         }
     }
 
+    /// Short-circuiting boolean OR. `true || Unknown` is `true`;
+    /// anything else with an `Unknown` operand is `Unknown`.
     pub fn or(&self, other: &Value) -> Value {
         // Short-circuit: true || anything = true
         if let Some(true) = self.as_bool() {
@@ -240,6 +271,7 @@ impl Value {
         }
     }
 
+    /// Boolean negation. Returns `Unknown` if `self` is not boolean-coercible.
     pub fn not(&self) -> Value {
         match self.as_bool() {
             Some(b) => Value::Bool(!b),
@@ -249,6 +281,8 @@ impl Value {
 
     // -- Unary --
 
+    /// Arithmetic negation. Only defined for `Int` and `Float`;
+    /// anything else returns `Unknown`.
     pub fn negate(&self) -> Value {
         match self {
             Value::Int(v) => Value::Int(-v),
@@ -261,7 +295,9 @@ impl Value {
 /// Signal emitted by flow-control statements (break, continue).
 #[derive(Debug, Clone, PartialEq)]
 pub enum FlowSignal {
+    /// Emitted by a `break` statement; terminates the enclosing loop.
     Break,
+    /// Emitted by a `continue` statement; skips to the next iteration.
     Continue,
 }
 

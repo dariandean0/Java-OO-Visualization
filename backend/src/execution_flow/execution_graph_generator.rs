@@ -5,9 +5,12 @@ use super::{
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Controls what is rendered into each step's DOT document.
 #[derive(Debug, Clone)]
 pub struct ExecutionGraphConfig {
+    /// Render the call-stack side panel
     pub show_call_stack: bool,
+    /// Render the active-object panel with field values
     pub show_object_states: bool,
 }
 
@@ -20,22 +23,34 @@ impl Default for ExecutionGraphConfig {
     }
 }
 
+/// One step of the animated execution trace, ready to render.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionGraphStep {
+    /// 1-based step index matching the source `ExecutionStep`
     pub step_number: usize,
+    /// Human-readable caption for this step
     pub description: String,
+    /// Standalone DOT document for this step
     pub dot_code: String,
+    /// Aggregate counters describing execution up through this step
     pub execution_state: ExecutionState,
 }
 
+/// Summary counters describing the program at a particular step.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionState {
+    /// Innermost method currently executing
     pub active_method: String,
+    /// Number of frames on the call stack
     pub call_stack_depth: usize,
+    /// Objects instantiated so far in the trace
     pub objects_created: usize,
+    /// Method invocations observed so far in the trace
     pub method_calls_made: usize,
 }
 
+/// Turns an [`ExecutionFlow`] into a sequence of per-step DOT documents
+/// suitable for step-by-step playback in the frontend.
 pub struct ExecutionGraphGenerator {
     config: ExecutionGraphConfig,
 }
@@ -47,16 +62,20 @@ impl Default for ExecutionGraphGenerator {
 }
 
 impl ExecutionGraphGenerator {
+    /// Create a new [`ExecutionGraphGenerator`] with the default config.
     pub fn new() -> Self {
         ExecutionGraphGenerator {
             config: ExecutionGraphConfig::default(),
         }
     }
 
+    /// Create a new [`ExecutionGraphGenerator`] with a custom [`ExecutionGraphConfig`].
     pub fn with_config(config: ExecutionGraphConfig) -> Self {
         ExecutionGraphGenerator { config }
     }
 
+    /// Produce one [`ExecutionGraphStep`] per step in `flow`. Each step's DOT
+    /// document shows the cumulative state up to and including that step.
     pub fn generate_execution_graphs(&self, flow: &ExecutionFlow) -> Vec<ExecutionGraphStep> {
         let mut graphs = Vec::new();
         let mut cumulative_steps = Vec::new();

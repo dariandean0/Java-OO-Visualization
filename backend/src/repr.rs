@@ -3,7 +3,10 @@ use serde::{Deserialize, Serialize};
 /// A high-level representation of an OO diagram.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Diagram {
+    /// Classes rendered in the diagram
     pub classes: Vec<JavaClass>,
+
+    /// Edges between those classes (extends, implements, uses, ...)
     pub relationships: Vec<Relationship>,
 }
 
@@ -112,7 +115,8 @@ pub struct MethodCall {
     pub is_static_call: bool,
 }
 
-/// Used in variable declarations and
+/// Runtime-style information about a declared object reference,
+/// collected from variable declarations and parameters.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ObjectInfo {
     /// Name of the variable
@@ -129,6 +133,7 @@ pub struct ObjectInfo {
     pub is_parameter: bool,
 }
 
+/// A directed relationship between two [`JavaClass`]es.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Relationship {
     /// Class A
@@ -139,14 +144,19 @@ pub struct Relationship {
     pub kind: RelationshipType,
 }
 
+/// How Class A relates to Class B in a [`Relationship`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum RelationshipType {
     /// Class A extends class B
     Extends,
     /// Class A implements interface B
     Implements,
+    /// Class A uses class B (e.g. as a field or local type)
     Uses,
+    /// Class A's method calls a method on class B
     Calls,
+    /// Class A contains an instance of class B
     Contains,
+    /// Class A invokes a specific method on class B
     MethodCall,
 }

@@ -8,19 +8,30 @@ use crate::{
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+/// Result of a non-execution trace Visualization attempt
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VisualizationResult {
+    /// Generated DOT source for the class diagram
     pub dot_code: String,
+
+    /// Static analysis used to produce `dot_code`
     pub analysis: AnalysisResult,
 }
 
+/// Result of an execution trace Visualization attempt
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionVisualizationResult {
+    /// Ordered execution steps derived from `main`
     pub execution_flow: ExecutionFlow,
+
+    /// Static analysis used as the backdrop for the trace
     pub static_analysis: AnalysisResult,
+
+    /// One DOT graph per step, suitable for playback
     pub execution_graphs: Vec<ExecutionGraphStep>,
 }
 
+/// Object who does the Visualization of Java code
 pub struct JavaVisualizer {
     parser: JavaParser,
     analyzer: JavaAnalyzer,
@@ -28,10 +39,13 @@ pub struct JavaVisualizer {
 }
 
 impl JavaVisualizer {
+    /// Create a new [`JavaVisualizer`] object
     pub fn new() -> Result<Self> {
         Self::with_config(GraphConfig::default())
     }
 
+    /// Create a new [`JavaVisualizer`] object with a
+    /// custom [`GraphConfig`]
     pub fn with_config(config: GraphConfig) -> Result<Self> {
         let parser = JavaParser::new().context("Parsing Error")?;
         let analyzer = JavaAnalyzer::new();
@@ -44,11 +58,13 @@ impl JavaVisualizer {
         })
     }
 
+    /// Generate a dotfile for the non-execution trace visualization
     pub fn generate_dot(&mut self, java_code: &str) -> Result<String> {
         let result = self.analyze_and_generate(java_code)?;
         Ok(result.dot_code)
     }
 
+    /// Generate [`VisualizationResult`] from `java_code`
     pub fn analyze_and_generate(&mut self, java_code: &str) -> Result<VisualizationResult> {
         // Parse the Java code
         let tree = self.parser.parse(java_code).context("ParseError")?;
@@ -64,6 +80,7 @@ impl JavaVisualizer {
         Ok(VisualizationResult { dot_code, analysis })
     }
 
+    /// Generate [`AnalysisResult`] from `java_code`
     pub fn get_analysis_only(&mut self, java_code: &str) -> Result<AnalysisResult> {
         let tree = self
             .parser
@@ -76,14 +93,17 @@ impl JavaVisualizer {
         Ok(analysis)
     }
 
+    /// Generate dot code from a [`AnalysisResult`]
     pub fn generate_dot_from_analysis(&self, analysis: &AnalysisResult) -> String {
         self.graph_generator.generate_dot(analysis)
     }
 
+    /// Setter for `graph_generator` field
     pub fn update_config(&mut self, config: GraphConfig) {
         self.graph_generator = GraphGenerator::with_config(config);
     }
 
+    /// Validate that `java_code` is valid java code
     pub fn validate_java_code(&mut self, java_code: &str) -> Result<bool> {
         self.parser
             .parse(java_code)
@@ -162,18 +182,21 @@ impl JavaVisualizer {
     }
 }
 
+/// One-shot helper: build a [`JavaVisualizer`] and return a class-diagram DOT string.
 #[allow(dead_code)]
 pub fn visualize_java_code(java_code: &str) -> Result<String> {
     let mut visualizer = JavaVisualizer::new()?;
     visualizer.generate_dot(java_code)
 }
 
+/// One-shot helper like [`visualize_java_code`] but with a custom [`GraphConfig`].
 #[allow(dead_code)]
 pub fn visualize_java_code_with_config(java_code: &str, config: GraphConfig) -> Result<String> {
     let mut visualizer = JavaVisualizer::with_config(config)?;
     visualizer.generate_dot(java_code)
 }
 
+/// One-shot helper: run static analysis on `java_code` and return the [`AnalysisResult`].
 #[allow(dead_code)]
 pub fn analyze_java_code(java_code: &str) -> Result<AnalysisResult> {
     let mut visualizer = JavaVisualizer::new()?;

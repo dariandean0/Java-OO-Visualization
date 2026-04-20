@@ -3,21 +3,35 @@ use crate::{
     repr::{JavaClass, JavaField, JavaMethod, Relationship, RelationshipType},
 };
 
+/// Renders an [`AnalysisResult`] into a static class-diagram DOT document.
+/// Output is styled to loosely match the course Memory Diagram Guide.
 pub struct GraphGenerator {
     config: GraphConfig,
 }
 
+/// Controls what is rendered by a [`GraphGenerator`]. Each flag toggles a
+/// specific visual element; see field docs for details.
 #[derive(Debug, Clone)]
 pub struct GraphConfig {
+    /// Render field entries inside each class node
     pub show_fields: bool,
+    /// Render method entries inside each class node
     pub show_methods: bool,
+    /// Render constructor entries inside each class node
     pub show_constructors: bool,
+    /// Include parameter lists in method entries
     pub show_method_parameters: bool,
+    /// Prefix field entries with their declared type
     pub show_field_types: bool,
+    /// Include `private` members (otherwise they are filtered out)
     pub show_private_members: bool,
+    /// Emit inter-class edges (extends, implements, calls, ...)
     pub include_relationships: bool,
+    /// Emit method-call edges between classes
     pub show_method_calls: bool,
+    /// Group fields into a visual cluster inside the class node
     pub cluster_fields: bool,
+    /// Group methods into a visual cluster inside the class node
     pub cluster_methods: bool,
 }
 
@@ -45,16 +59,20 @@ impl Default for GraphGenerator {
 }
 
 impl GraphGenerator {
+    /// Create a new [`GraphGenerator`] with the default [`GraphConfig`].
     pub fn new() -> Self {
         GraphGenerator {
             config: GraphConfig::default(),
         }
     }
 
+    /// Create a new [`GraphGenerator`] with a custom [`GraphConfig`].
     pub fn with_config(config: GraphConfig) -> Self {
         GraphGenerator { config }
     }
 
+    /// Generate a complete `digraph JavaClasses { ... }` document from
+    /// an [`AnalysisResult`].
     pub fn generate_dot(&self, analysis: &AnalysisResult) -> String {
         let mut dot = String::new();
 

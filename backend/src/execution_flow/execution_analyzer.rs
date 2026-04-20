@@ -9,62 +9,81 @@ const MAX_LOOP_ITERATIONS: usize = 100;
 /// Maps (class_name, method_name) -> (start_byte, end_byte) of the method body in source
 pub type MethodBodyMap = HashMap<(String, String), (usize, usize)>;
 
+/// One atomic event in the execution trace, tied to a source line.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ExecutionStep {
+    /// 1-based index assigned in order of execution
     pub step_number: usize,
+    /// 1-based source line this step corresponds to
     pub line_number: usize,
+    /// Raw source text of the line, for display
     pub source_line: String,
+    /// What this step is doing (method call, assignment, branch, ...)
     pub action: ExecutionAction,
+    /// Call stack at the moment this step ran (outermost first)
     pub call_stack: Vec<String>,
+    /// Names of variables that currently reference a live object
     pub active_objects: Vec<String>,
+    /// Human-readable explanation of the step
     pub description: String,
 }
 
+/// The kind of thing an `ExecutionStep` represents.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ExecutionAction {
+    /// A method is being invoked.
     MethodCall {
         caller: Option<String>,
         method_name: String,
         target_class: String,
         parameters: Vec<String>,
     },
+    /// `new ClassName(...)` produced a new instance.
     ObjectCreation {
         variable_name: String,
         class_name: String,
         constructor_params: Vec<String>,
     },
+    /// A local variable was assigned a value.
     VariableAssignment {
         variable_name: String,
         value_type: String,
         value: String,
     },
+    /// A `return` statement executed.
     MethodReturn {
         method_name: String,
         return_value: Option<String>,
     },
+    /// An `if` / `else` branch decision was taken.
     ConditionalBranch {
         condition: String,
         branch_taken: bool,
     },
+    /// One iteration of a `for` / `while` / `do` loop ran.
     LoopIteration {
         loop_type: String,
         condition: String,
         iteration: usize,
     },
+    /// Control entered a method body.
     MethodEntry {
         class_name: String,
         method_name: String,
     },
+    /// Control left a method body.
     MethodExit {
         class_name: String,
         method_name: String,
         return_value: Option<String>,
     },
+    /// A field was read.
     FieldAccess {
         class_name: String,
         field_name: String,
         value: Option<String>,
     },
+    /// A field was written.
     FieldMutation {
         class_name: String,
         field_name: String,
@@ -73,14 +92,22 @@ pub enum ExecutionAction {
     },
 }
 
+/// The full execution trace produced by [`ExecutionAnalyzer::analyze_execution_flow`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionFlow {
+    /// Ordered list of every step observed during the trace
     pub steps: Vec<ExecutionStep>,
+    /// Adjacency list: method -> the methods it called
     pub call_graph: HashMap<String, Vec<String>>,
-    pub object_lifecycle: HashMap<String, Vec<usize>>, // object_name -> [creation_step, usage_steps...]
+    /// Per-object list of step indices: `[creation_step, usage_steps...]`
+    pub object_lifecycle: HashMap<String, Vec<usize>>,
+    /// Deepest call stack observed during the trace
     pub max_call_stack_depth: usize,
 }
 
+/// Walks the AST and produces an [`ExecutionFlow`] by symbolically
+/// executing `main`. Instances are single-use; call [`ExecutionAnalyzer::new`]
+/// for each analysis.
 pub struct ExecutionAnalyzer {
     analysis_result: AnalysisResult,
     current_step: usize,
@@ -102,6 +129,8 @@ pub struct ExecutionAnalyzer {
 }
 
 impl ExecutionAnalyzer {
+    /// Create an [`ExecutionAnalyzer`] seeded with a prior static [`AnalysisResult`].
+    /// The static analysis is used for type inference and method lookups during the trace.
     pub fn new(analysis_result: AnalysisResult) -> Self {
         ExecutionAnalyzer {
             analysis_result,
@@ -124,6 +153,9 @@ impl ExecutionAnalyzer {
         }
     }
 
+    /// Walk the AST starting from `main` and produce an [`ExecutionFlow`].
+    /// Returns an empty flow if no `main` method is found.
+    /// Loops are bounded by `MAX_LOOP_ITERATIONS` and recursion by `max_call_depth`.
     pub fn analyze_execution_flow(&mut self, root_node: &Node, source: &str) -> ExecutionFlow {
         // Build method body map before walking main
         self.method_bodies = Self::build_method_body_map(root_node, source);

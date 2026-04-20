@@ -1,11 +1,14 @@
 use anyhow::{Context, Result};
 use tree_sitter::{Node, Parser, Tree};
 
+/// Wrapper around a tree_sitter parser
+/// Initialized with Java data.
 pub struct JavaParser {
     parser: Parser,
 }
 
 impl JavaParser {
+    /// Initialize [`JavaParser`] with information from `tree_sitter_java`
     pub fn new() -> Result<Self> {
         let mut parser = Parser::new();
         let language = tree_sitter_java::LANGUAGE.into();
@@ -18,21 +21,30 @@ impl JavaParser {
         Ok(JavaParser { parser })
     }
 
+    /// Parse and process Java source code.
+    /// Returns a tree.
     pub fn parse(&mut self, source_code: &str) -> Result<Tree> {
         self.parser
             .parse(source_code, None)
             .context("Failed to parse Java code")
     }
 
+    /// Get the root node location.
+    /// Requires that [`JavaParser::parse`] was called
+    /// before hand in order to populate Tree.
     pub fn get_root_node<'a>(&self, tree: &'a Tree) -> Node<'a> {
         tree.root_node()
     }
 }
 
+/// Returns the text attributed to the Node.
+/// `source` is the total program source code.
+/// `Node` is the node in the tree.
 pub fn node_text<'a>(node: &Node, source: &'a str) -> &'a str {
     &source[node.start_byte()..node.end_byte()]
 }
 
+/// Walk a tree, running a callback on each child node
 pub fn walk_tree<F>(node: &Node, source: &str, depth: usize, callback: &mut F)
 where
     F: FnMut(&Node, &str, usize),

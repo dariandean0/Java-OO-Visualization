@@ -18,6 +18,7 @@ pub struct JavaAnalyzer {
     type_inference: HashMap<String, String>,
 }
 
+/// The result of an Analysis
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalysisResult {
     pub classes: Vec<JavaClass>,
