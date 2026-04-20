@@ -52,6 +52,13 @@ jobs:
           -C opt-level=s"
           cargo build --lib --target wasm32-unknown-emscripten --release
 
+      - name: Debug build output
+        run: |
+          echo "Current dir:"
+          pwd
+          echo "Backend contents:"
+          ls -R backend
+
       - name: Move build output
         run: |
           rm -rf wasm
