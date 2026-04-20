@@ -1,4 +1,0 @@
-# Local WASM build output. The wasm/ directory is built by
-# scripts/build-wasm.sh locally and by .github/workflows/build-wasm.yml on CI.
-# It's committed only to the `wasm-binaries` branch, never to main.
-wasm/
